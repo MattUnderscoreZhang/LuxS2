@@ -4,9 +4,11 @@ import os.path as osp
 import torch
 from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
 
-from lux_entry.models import load_model, model_for_testing
+from lux_entry.models import model_for_testing
+from lux_entry.models.load_model import load_model
 
 
+MODEL = model_for_testing
 MODEL_WEIGHTS_RELATIVE_PATH = "weights/single_movement.zip"
 
 
@@ -18,7 +20,9 @@ class Agent:
 
         this_directory = osp.dirname(__file__)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.policy = load_model.load(model_for_testing.Net, osp.join(this_directory, MODEL_WEIGHTS_RELATIVE_PATH))
+        self.policy = load_model(
+            MODEL.Net, osp.join(this_directory, MODEL_WEIGHTS_RELATIVE_PATH)
+        )
         self.policy.eval().to(device)
 
         self.controller = SimpleUnitDiscreteController(self.env_cfg)
@@ -26,7 +30,9 @@ class Agent:
     def bid_policy(self, step: int, obs: dict, remainingOverageTime: int = 60):
         return dict(faction="AlphaStrike", bid=0)
 
-    def factory_placement_policy(self, step: int, obs: dict, remainingOverageTime: int = 60):
+    def factory_placement_policy(
+        self, step: int, obs: dict, remainingOverageTime: int = 60
+    ):
         if obs["teams"][self.player]["metal"] == 0:
             return dict()
         potential_spawns = list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))

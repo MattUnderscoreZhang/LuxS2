@@ -18,7 +18,9 @@ class Net(nn.Module):
         x = self.model(x)
         return x
 
-    def act(self, x: Tensor, action_masks: Tensor, deterministic: bool = False) -> Tensor:
+    def act(
+        self, x: Tensor, action_masks: Tensor, deterministic: bool = False
+    ) -> Tensor:
         action_logits = self.forward(x)
         action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)

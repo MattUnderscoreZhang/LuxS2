@@ -5,7 +5,7 @@ import torch.nn as nn
 import zipfile
 
 
-def load(model_class: type[nn.Module], model_path: str) -> nn.Module:
+def load_model(model_class: type[nn.Module], model_path: str) -> nn.Module:
     # load .pth or .zip
     if model_path[-4:] == ".zip":
         with zipfile.ZipFile(model_path) as archive:
