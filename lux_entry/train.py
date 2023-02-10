@@ -2,19 +2,13 @@
 Implementation of RL agent. Note that luxai_s2 and stable_baselines3 are packages not available during the competition running (ATM)
 """
 
-
 import copy
-import os.path as osp
-
 import gym
-import numpy as np
-import torch as th
-import torch.nn as nn
-from gym import spaces
 from gym.wrappers import TimeLimit
-from luxai_s2.state import ObservationStateDict, StatsStateDict
+from luxai_s2.state import StatsStateDict
 from luxai_s2.utils.heuristics.factory_placement import place_near_random_ice
 from luxai_s2.wrappers import SB3Wrapper
+import os.path as osp
 from stable_baselines3.common.callbacks import (
     BaseCallback,
     CheckpointCallback,
@@ -29,6 +23,7 @@ from stable_baselines3.common.vec_env import (
     VecVideoRecorder,
 )
 from stable_baselines3.ppo import PPO
+import torch as th
 
 from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
 

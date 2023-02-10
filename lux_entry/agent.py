@@ -1,38 +1,25 @@
-"""
-This file is where your agent's logic is kept. Define a bidding policy, factory placement policy, as well as a policy for playing the normal phase of the game
-
-The tutorial will learn an RL agent to play the normal phase and use heuristics for the other two phases.
-
-Note that like the other kits, you can only debug print to standard error e.g. print("message", file=sys.stderr)
-"""
-
-import os.path as osp
-import sys
-
-import numpy as np
-import torch as th
-
 from lux.config import EnvConfig
-from nn import load_policy
+import numpy as np
+import os.path as osp
+import torch
 from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
 
-# change this to use weights stored elsewhere
-# make sure the model weights are submitted with the other code files
-# any files in the logs folder are not necessary
-MODEL_WEIGHTS_RELATIVE_PATH = "./best_model.zip"
+from lux_entry.models import load_model, model_for_testing
+
+
+MODEL_WEIGHTS_RELATIVE_PATH = "weights/single_movement.zip"
 
 
 class Agent:
     def __init__(self, player: str, env_cfg: EnvConfig) -> None:
         self.player = player
         self.opp_player = "player_1" if self.player == "player_0" else "player_0"
-        np.random.seed(0)
         self.env_cfg: EnvConfig = env_cfg
 
-        directory = osp.dirname(__file__)
-        # load our RL policy
-        self.policy = load_policy(osp.join(directory, MODEL_WEIGHTS_RELATIVE_PATH))
-        self.policy.eval()
+        this_directory = osp.dirname(__file__)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.policy = load_model.load(model_for_testing.Net, osp.join(this_directory, MODEL_WEIGHTS_RELATIVE_PATH))
+        self.policy.eval().to(device)
 
         self.controller = SimpleUnitDiscreteController(self.env_cfg)
 
@@ -82,15 +69,15 @@ class Agent:
         obs = SimpleUnitObservationWrapper.convert_obs(raw_obs, env_cfg=self.env_cfg)
         obs_arr = obs[self.player]
 
-        obs_arr = th.from_numpy(obs_arr).float()
-        with th.no_grad():
+        obs_arr = torch.from_numpy(obs_arr).float()
+        with torch.no_grad():
             # NOTE: we set deterministic to False here, which is only recommended for RL agents
             # that create too many invalid actions (less of an issue if you train with invalid action masking)
 
             # to improve performance, we have a rule based action mask generator for the controller used
             # which will force the agent to generate actions that are valid only.
             action_mask = (
-                th.from_numpy(self.controller.action_masks(self.player, raw_obs))
+                torch.from_numpy(self.controller.action_masks(self.player, raw_obs))
                 .unsqueeze(0)  # we unsqueeze/add an extra batch dimension =
                 .bool()
             )
