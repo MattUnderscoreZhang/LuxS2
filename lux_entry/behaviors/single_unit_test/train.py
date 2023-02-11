@@ -19,10 +19,10 @@ from stable_baselines3.common.vec_env import (
 )
 from stable_baselines3.ppo import PPO
 
-from lux_entry.wrappers import (
-    SimpleUnitDiscreteController,
-    SimpleUnitObservationWrapper,
-    SingleAgentEnvWrapper,
+from lux_entry.behaviors.single_unit_test.wrappers import (
+    ControllerWrapper,
+    ObservationWrapper,
+    EnvWrapper,
 )
 
 
@@ -32,10 +32,10 @@ def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
         env = SB3Wrapper(
             env,
             factory_placement_policy=place_near_random_ice,
-            controller=SimpleUnitDiscreteController(env.env_cfg),
+            controller=ControllerWrapper(env.env_cfg),
         )
-        env = SimpleUnitObservationWrapper(env)  # changes observation to include a few simple features
-        env = SingleAgentEnvWrapper(env)  # convert to single agent, add our reward
+        env = ObservationWrapper(env)  # changes observation to include a few simple features
+        env = EnvWrapper(env)  # convert to single agent, add our reward
         env = TimeLimit(env, max_episode_steps=max_episode_steps)  # set horizon to 100 to make training faster. Default is 1000
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)

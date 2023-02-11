@@ -1,15 +1,9 @@
 from lux.config import EnvConfig
 import numpy as np
-import os.path as osp
 import torch
-from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
 
-from lux_entry.models import model_for_testing
-from lux_entry.models.load_model import load_model
-
-
-MODEL = model_for_testing
-MODEL_WEIGHTS_RELATIVE_PATH = "weights/single_movement.zip"
+from lux_entry.behaviors import load_model
+from lux_entry.behaviors.single_unit_test import model, wrappers
 
 
 class Agent:
@@ -18,14 +12,11 @@ class Agent:
         self.opp_player = "player_1" if self.player == "player_0" else "player_0"
         self.env_cfg: EnvConfig = env_cfg
 
-        this_directory = osp.dirname(__file__)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.policy = load_model(
-            MODEL.Net, osp.join(this_directory, MODEL_WEIGHTS_RELATIVE_PATH)
-        )
+        self.policy = load_model(model.Net, model.WEIGHTS_PATH)
         self.policy.eval().to(device)
 
-        self.controller = SimpleUnitDiscreteController(self.env_cfg)
+        self.controller = wrappers.ControllerWrapper(self.env_cfg)
 
     def bid_policy(self, step: int, obs: dict, remainingOverageTime: int = 60):
         return dict(faction="AlphaStrike", bid=0)
@@ -70,9 +61,9 @@ class Agent:
 
     def act(self, step: int, obs: dict, remainingOverageTime: int = 60):
         # first convert observations using the same observation wrapper you used for training
-        # note that SimpleUnitObservationWrapper takes input as the full observation for both players and returns an obs for players
+        # note that ObservationWrapper takes input as the full observation for both players and returns an obs for players
         raw_obs = dict(player_0=obs, player_1=obs)
-        obs = SimpleUnitObservationWrapper.convert_obs(raw_obs, env_cfg=self.env_cfg)
+        obs = wrappers.ObservationWrapper.convert_obs(raw_obs, env_cfg=self.env_cfg)
         obs_arr = obs[self.player]
 
         obs_arr = torch.from_numpy(obs_arr).float()

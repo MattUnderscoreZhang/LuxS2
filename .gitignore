@@ -4,3 +4,4 @@ logs
 luxai_s2
 *.zip
 *.pyc
+*.html

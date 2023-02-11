@@ -1,6 +1,11 @@
+import os.path as osp
 import torch
 from torch.functional import Tensor
 import torch.nn as nn
+
+
+this_directory = osp.dirname(__file__)
+WEIGHTS_PATH = osp.join(this_directory, "weights.zip")
 
 
 class Net(nn.Module):
