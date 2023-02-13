@@ -1,41 +1,32 @@
 import argparse
-from typing import Callable
 import gym
-from gym.wrappers import TimeLimit
-from luxai_s2.utils.heuristics.factory_placement import place_near_random_ice
-from luxai_s2.wrappers import SB3Wrapper
+from gym.wrappers.time_limit import TimeLimit
 import os.path as osp
+from typing import Callable
+
 from stable_baselines3.common.base_class import BaseAlgorithm
-from stable_baselines3.common.callbacks import (
-    BaseCallback,
-    EvalCallback,
-)
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.vec_env import (
-    SubprocVecEnv,
-    VecVideoRecorder,
-)
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
 from stable_baselines3.ppo import PPO
 
-from lux_entry.behaviors.single_unit_test.wrappers import (
-    ControllerWrapper,
-    ObservationWrapper,
-    EnvWrapper,
-)
+from lux_entry.behaviors.starter_kit import wrappers
+from lux_entry.heuristics import bidding, factory_placement
 
 
 def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100) -> Callable[[], gym.Env]:
     def _init() -> gym.Env:
         env = gym.make(env_id, verbose=0, collect_stats=True, MAX_FACTORIES=2)
-        env = SB3Wrapper(
+        env = wrappers.MainGameOnlyWrapper(
             env,
-            factory_placement_policy=place_near_random_ice,
-            controller=ControllerWrapper(env.env_cfg),
+            bid_policy=bidding.zero_bid,
+            factory_placement_policy=factory_placement.place_near_random_ice,
+            controller=wrappers.ControllerWrapper(env.env_cfg),
         )
-        env = ObservationWrapper(env)  # changes observation to include a few simple features
-        env = EnvWrapper(env)  # convert to single agent, add our reward
+        env = wrappers.ObservationWrapper(env)  # changes observation to include a few simple features
+        env = wrappers.EnvWrapper(env)  # convert to single agent, add our reward
         env = TimeLimit(env, max_episode_steps=max_episode_steps)  # set horizon to 100 to make training faster. Default is 1000
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
