@@ -1,9 +1,13 @@
 import copy
 import gym
 from gym import spaces
+from gym.wrappers.time_limit import TimeLimit
 import numpy as np
 import numpy.typing as npt
 from typing import Any, Callable, Dict
+
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.env import LuxAI_S2
 from luxai_s2.state import ObservationStateDict
@@ -11,6 +15,8 @@ from luxai_s2.state import StatsStateDict
 from luxai_s2.unit import BidActionType, FactoryPlacementActionType
 from luxai_s2.utils import my_turn_to_place_factory
 from luxai_s2.wrappers.controllers import Controller
+
+from lux_entry.heuristics import bidding, factory_placement
 
 
 class MainGameOnlyWrapper(gym.Wrapper):
@@ -426,3 +432,23 @@ class EnvWrapper(gym.Wrapper):
         obs = self.env.reset(**kwargs)["player_0"]
         self.prev_step_metrics = None
         return obs
+
+
+def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100) -> Callable[[], gym.Env]:
+    def _init() -> gym.Env:
+        env = gym.make(env_id, verbose=0, collect_stats=True, MAX_FACTORIES=2)
+        env = MainGameOnlyWrapper(
+            env,
+            bid_policy=bidding.zero_bid,
+            factory_placement_policy=factory_placement.place_near_random_ice,
+            controller=ControllerWrapper(env.env_cfg),
+        )
+        env = ObservationWrapper(env)  # changes observation to include a few simple features
+        env = EnvWrapper(env)  # convert to single agent, add our reward
+        env = TimeLimit(env, max_episode_steps=max_episode_steps)  # set horizon to 100 to make training faster. Default is 1000
+        env = Monitor(env)  # for SB3 to allow it to record metrics
+        env.reset(seed=seed + rank)
+        set_random_seed(seed)
+        return env
+
+    return _init

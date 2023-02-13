@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from lux_entry.behaviors import load_model
-from lux_entry.behaviors.single_unit_test import model, wrappers
+from lux_entry.behaviors.starter_kit import model, env
 
 
 class Agent:
@@ -16,7 +16,7 @@ class Agent:
         self.policy = load_model(model.Net, model.WEIGHTS_PATH)
         self.policy.eval().to(device)
 
-        self.controller = wrappers.ControllerWrapper(self.env_cfg)
+        self.controller = env.ControllerWrapper(self.env_cfg)
 
     def bid_policy(self, step: int, obs: dict, remainingOverageTime: int = 60):
         return dict(faction="AlphaStrike", bid=0)
@@ -63,7 +63,7 @@ class Agent:
         # first convert observations using the same observation wrapper you used for training
         # note that ObservationWrapper takes input as the full observation for both players and returns an obs for players
         raw_obs = dict(player_0=obs, player_1=obs)
-        obs = wrappers.ObservationWrapper.convert_obs(raw_obs, env_cfg=self.env_cfg)
+        obs = env.ObservationWrapper.convert_obs(raw_obs, env_cfg=self.env_cfg)
         obs_arr = obs[self.player]
 
         obs_arr = torch.from_numpy(obs_arr).float()
