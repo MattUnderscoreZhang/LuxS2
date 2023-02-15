@@ -10,8 +10,6 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
 
-from stable_baselines3 import PPO
-
 
 class TensorboardCallback(BaseCallback):
     def __init__(self, tag: str, verbose: int = 0):
