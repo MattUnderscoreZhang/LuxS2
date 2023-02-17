@@ -20,15 +20,17 @@ from lux_entry.heuristics import bidding, factory_placement
 
 class Controller:
     def __init__(self, action_space: spaces.Space) -> None:
-        " Controller class copied here since you won't have access to the luxai_s2 package directly on the competition server "
+        "Controller class copied here since you won't have access to the luxai_s2 package directly on the competition server"
         self.action_space = action_space
 
-    def action_to_lux_action(self, agent: str, obs: Dict[str, Any], action: npt.NDArray):
-        " Takes the observation and the parameterized action and returns an action formatted for the Lux env "
+    def action_to_lux_action(
+        self, agent: str, obs: Dict[str, Any], action: npt.NDArray
+    ):
+        "Takes the observation and the parameterized action and returns an action formatted for the Lux env"
         raise NotImplementedError()
 
     def action_masks(self, agent: str, obs: Dict[str, Any]):
-        " Generates a boolean action mask indicating in each discrete dimension whether it would be valid or not "
+        "Generates a boolean action mask indicating in each discrete dimension whether it would be valid or not"
         raise NotImplementedError()
 
 
@@ -37,7 +39,9 @@ class MainGameOnlyWrapper(gym.Wrapper):
         self,
         env: LuxAI_S2,
         bid_policy: Callable[[str, ObservationStateDict], Dict[str, BidActionType]],
-        factory_placement_policy: Callable[[str, ObservationStateDict], Dict[str, FactoryPlacementActionType]],
+        factory_placement_policy: Callable[
+            [str, ObservationStateDict], Dict[str, FactoryPlacementActionType]
+        ],
         controller: Controller,
     ) -> None:
         """
@@ -61,7 +65,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
                 )
             else:
                 lux_action[agent] = dict()
-        
+
         # lux_action is now a dict mapping agent name to an action
         obs, reward, done, info = self.env.step(lux_action)
         self.prev_obs = obs
@@ -70,13 +74,13 @@ class MainGameOnlyWrapper(gym.Wrapper):
     def reset(self, **kwargs):
         # we call the original reset function first
         obs = self.env.reset(**kwargs)
-        
+
         # then use the bid policy to go through the bidding phase
         action = dict()
         for agent in self.env.agents:
             action[agent] = self.bid_policy(agent, obs[agent])
         obs, _, _, _ = self.env.step(action)
-        
+
         # while real_env_steps < 0, we are in the factory placement phase
         # so we use the factory placement policy to step through this
         while self.env.state.real_env_steps < 0:
@@ -91,7 +95,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
                     action[agent] = dict()
             obs, _, _, _ = self.env.step(action)
         self.prev_obs = obs
-        
+
         return obs
 
 
@@ -378,7 +382,7 @@ class ObservationWrapper(gym.ObservationWrapper):
 
 class EnvWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env) -> None:
-        """ Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training """
+        """Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training"""
         super().__init__(env)
         self.prev_step_metrics = None
         self.player = "player_0"
@@ -433,7 +437,9 @@ class EnvWrapper(gym.Wrapper):
         return obs
 
 
-def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100) -> Callable[[], gym.Env]:
+def make_env(
+    env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
+) -> Callable[[], gym.Env]:
     def _init() -> gym.Env:
         env = gym.make(env_id, verbose=0, collect_stats=True, MAX_FACTORIES=2)
         env = MainGameOnlyWrapper(
@@ -442,9 +448,13 @@ def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
             factory_placement_policy=factory_placement.place_near_random_ice,
             controller=ControllerWrapper(env.env_cfg),
         )
-        env = ObservationWrapper(env)  # changes observation to include a few simple features
+        env = ObservationWrapper(
+            env
+        )  # changes observation to include a few simple features
         env = EnvWrapper(env)  # convert to single agent, add our reward
-        env = TimeLimit(env, max_episode_steps=max_episode_steps)  # set horizon to 100 to make training faster. Default is 1000
+        env = TimeLimit(
+            env, max_episode_steps=max_episode_steps
+        )  # set horizon to 100 to make training faster. Default is 1000
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
         set_random_seed(seed)

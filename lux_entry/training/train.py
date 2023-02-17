@@ -28,7 +28,9 @@ class TensorboardCallback(BaseCallback):
 
 
 def train(args: argparse.Namespace, env_id: str, model: BaseAlgorithm):
-    eval_env = SubprocVecEnv([args.make_env(env_id, i, max_episode_steps=1000) for i in range(4)])
+    eval_env = SubprocVecEnv(
+        [args.make_env(env_id, i, max_episode_steps=1000) for i in range(4)]
+    )
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=osp.join(args.log_path, "models"),
@@ -38,14 +40,19 @@ def train(args: argparse.Namespace, env_id: str, model: BaseAlgorithm):
         render=False,
         n_eval_episodes=5,
     )
-    model.learn(args.total_timesteps, callback=[TensorboardCallback(tag="train_metrics"), eval_callback])
+    model.learn(
+        args.total_timesteps,
+        callback=[TensorboardCallback(tag="train_metrics"), eval_callback],
+    )
     model.save(osp.join(args.log_path, "models/latest_model"))
 
 
 def evaluate(args: argparse.Namespace, env_id: str, model: BaseAlgorithm):
     model = model.load(args.model_path)
     video_length = 1000  # default horizon
-    eval_env = SubprocVecEnv([args.make_env(env_id, i, max_episode_steps=1000) for i in range(args.n_envs)])
+    eval_env = SubprocVecEnv(
+        [args.make_env(env_id, i, max_episode_steps=1000) for i in range(args.n_envs)]
+    )
     eval_env = VecVideoRecorder(
         eval_env,
         osp.join(args.log_path, "eval_videos"),
@@ -63,10 +70,12 @@ def main(args: argparse.Namespace):
     if args.seed is not None:
         set_random_seed(args.seed)
     env_id = "LuxAI_S2-v0"
-    env = SubprocVecEnv([
-        args.make_env(env_id, i, max_episode_steps=args.max_episode_steps)
-        for i in range(args.n_envs)
-    ])
+    env = SubprocVecEnv(
+        [
+            args.make_env(env_id, i, max_episode_steps=args.max_episode_steps)
+            for i in range(args.n_envs)
+        ]
+    )
     env.reset()
     if args.eval:
         evaluate(args, env_id, args.model(env, args))
@@ -76,16 +85,42 @@ def main(args: argparse.Namespace):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-b", "--behavior", type=str, required=True, help="Behavior to train.")
-    parser.add_argument("-t", "--training-conf", type=str, default="test_conf", help="Training configurations.")
-    parser.add_argument("-e", "--eval", action="store_true", help="If set, will put model in evaluation mode.")
+    parser.add_argument(
+        "-b", "--behavior", type=str, required=True, help="Behavior to train."
+    )
+    parser.add_argument(
+        "-t",
+        "--training-conf",
+        type=str,
+        default="test_conf",
+        help="Training configurations.",
+    )
+    parser.add_argument(
+        "-e",
+        "--eval",
+        action="store_true",
+        help="If set, will put model in evaluation mode.",
+    )
     args = parser.parse_args()
 
     with open(Path(__file__).parent / (args.training_conf + ".yaml")) as f:
         training_args = argparse.Namespace(**yaml.safe_load(f))
-    training_args.model = importlib.import_module(f"lux_entry.behaviors.{args.behavior}.model").model
-    training_args.log_path = Path(__file__).parent.parent / "behaviors" / args.behavior / "logs"
-    training_args.make_env = importlib.import_module(f"lux_entry.behaviors.{args.behavior}.env").make_env
+    training_args.model = importlib.import_module(
+        f"lux_entry.behaviors.{args.behavior}.model"
+    ).model
+    training_args.log_path = (
+        Path(__file__).parent.parent / "behaviors" / args.behavior / "logs"
+    )
+    training_args.make_env = importlib.import_module(
+        f"lux_entry.behaviors.{args.behavior}.env"
+    ).make_env
     training_args.eval = args.eval
-    training_args.model_path = Path(__file__).parent.parent / "behaviors" / args.behavior / "logs" / "models" / "best_model.zip"
+    training_args.model_path = (
+        Path(__file__).parent.parent
+        / "behaviors"
+        / args.behavior
+        / "logs"
+        / "models"
+        / "best_model.zip"
+    )
     main(training_args)

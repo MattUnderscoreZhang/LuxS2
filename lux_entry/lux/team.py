@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from lux.config import EnvConfig
+from lux_entry.lux.config import EnvConfig
 
 TERM_COLORS = False
 try:

@@ -4,8 +4,8 @@ from sys import stderr
 
 import numpy as np
 
-from lux.cargo import UnitCargo
-from lux.config import EnvConfig
+from lux_entry.lux.cargo import UnitCargo
+from lux_entry.lux.config import EnvConfig
 
 
 @dataclass

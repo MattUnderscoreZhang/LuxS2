@@ -3,11 +3,11 @@ from typing import Dict
 
 import numpy as np
 
-from lux.cargo import UnitCargo
-from lux.config import EnvConfig
-from lux.factory import Factory
-from lux.team import FactionTypes, Team
-from lux.unit import Unit
+from lux_entry.lux.cargo import UnitCargo
+from lux_entry.lux.config import EnvConfig
+from lux_entry.lux.factory import Factory
+from lux_entry.lux.team import FactionTypes, Team
+from lux_entry.lux.unit import Unit
 
 
 def process_action(action):
@@ -68,7 +68,6 @@ def process_obs(player, game_state, step, obs):
 
 
 def obs_to_game_state(step, env_cfg: EnvConfig, obs):
-
     units = dict()
     for agent in obs["units"]:
         units[agent] = dict()
@@ -134,7 +133,7 @@ class Board:
 @dataclass
 class GameState:
     """
-    A GameState object at step env_steps. Copied from luxai_s2/state/state.py
+    A GameState object at step env_steps. Copied from lux_entry.luxai_s2/state/state.py
     """
 
     env_steps: int

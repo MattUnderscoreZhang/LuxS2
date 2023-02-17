@@ -16,7 +16,7 @@ from lux_entry.wrappers.skip_phases import MainGameOnlyWrapper
 
 class EnvWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env) -> None:
-        """ Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training """
+        """Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training"""
         super().__init__(env)
         self.prev_step_metrics = None
         self.player = "player_0"
@@ -71,7 +71,9 @@ class EnvWrapper(gym.Wrapper):
         return obs
 
 
-def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100) -> Callable[[], gym.Env]:
+def make_env(
+    env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
+) -> Callable[[], gym.Env]:
     def _init() -> gym.Env:
         env = gym.make(env_id, verbose=0, collect_stats=True, MAX_FACTORIES=2)
         env = MainGameOnlyWrapper(
@@ -80,9 +82,13 @@ def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
             factory_placement_policy=factory_placement.place_near_random_ice,
             controller=ControllerWrapper(env.env_cfg),
         )
-        env = ObservationWrapper(env)  # changes observation to include a few simple features
+        env = ObservationWrapper(
+            env
+        )  # changes observation to include a few simple features
         env = EnvWrapper(env)  # convert to single agent, add our reward
-        env = TimeLimit(env, max_episode_steps=max_episode_steps)  # set horizon to 100 to make training faster. Default is 1000
+        env = TimeLimit(
+            env, max_episode_steps=max_episode_steps
+        )  # set horizon to 100 to make training faster. Default is 1000
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
         set_random_seed(seed)

@@ -1,5 +1,4 @@
 import gym
-from luxai_s2.state.state import ObservationStateDict
 import numpy.typing as npt
 from typing import Callable, Dict
 
@@ -16,7 +15,9 @@ class MainGameOnlyWrapper(gym.Wrapper):
         self,
         env: LuxAI_S2,
         bid_policy: Callable[[str, ObservationStateDict], Dict[str, BidActionType]],
-        factory_placement_policy: Callable[[str, ObservationStateDict], Dict[str, FactoryPlacementActionType]],
+        factory_placement_policy: Callable[
+            [str, ObservationStateDict], Dict[str, FactoryPlacementActionType]
+        ],
         controller: Controller,
     ) -> None:
         """
@@ -40,7 +41,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
                 )
             else:
                 lux_action[agent] = dict()
-        
+
         # lux_action is now a dict mapping agent name to an action
         obs, reward, done, info = self.env.step(lux_action)
         self.prev_obs = obs
@@ -49,13 +50,13 @@ class MainGameOnlyWrapper(gym.Wrapper):
     def reset(self, **kwargs):
         # we call the original reset function first
         obs = self.env.reset(**kwargs)
-        
+
         # then use the bid policy to go through the bidding phase
         action = dict()
         for agent in self.env.agents:
             action[agent] = self.bid_policy(agent, obs)
         obs, _, _, _ = self.env.step(action)
-        
+
         # while real_env_steps < 0, we are in the factory placement phase
         # so we use the factory placement policy to step through this
         while self.env.state.real_env_steps < 0:
@@ -70,5 +71,5 @@ class MainGameOnlyWrapper(gym.Wrapper):
                     action[agent] = dict()
             obs, _, _, _ = self.env.step(action)
         self.prev_obs = obs
-        
+
         return obs
