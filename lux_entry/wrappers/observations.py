@@ -86,7 +86,7 @@ class ObservationWrapper(gym.ObservationWrapper):
             high = np.inf if "_unbounded" in key else 1.0
             spaces_dict[key] = (
                 spaces.MultiBinary((1, n_features, map_size, map_size))
-                if "_has_" in key
+                if "_has_" in key or "_is_" in key
                 else spaces.Dict() if key == "teams"
                 else int if key == "factories_per_team"
                 else spaces.Box(low, high, shape=(1, n_features, map_size, map_size))
@@ -151,7 +151,7 @@ class ObservationWrapper(gym.ObservationWrapper):
             for r in env_obs["units"][player].values():
                 cargo = r["cargo"]
                 pos = r["pos"]
-                obs["tile_has_robot"][p][pos] = 1
+                obs["tile_per_player_has_robot"][p][pos] = 1
                 obs["tile_has_light_robot"][p][pos] = r["unit_type"] == "LIGHT"
                 obs["tile_has_heavy_robot"][p][pos] = r["unit_type"] == "HEAVY"
                 obs["tile_per_player_light_robot_power"][p][pos] = r["power"] / LIGHT_BAT_CAP
