@@ -74,14 +74,23 @@ def partial_obs_from(full_obs: FullObservation, pos: Tuple[int, int]) -> Observa
     assert full_obs.tile_has_ice.shape == (1, 48, 48)  # hopefully they don't change the map size
     x, y = 47 - pos[0], 47 - pos[1]
 
+    def mean_pool(arr: np.ndarray, window: int) -> np.ndarray:
+        arr = arr.reshape(arr.shape[0] // window, window, arr.shape[1] // window, window)
+        return np.mean(arr, axis=(1, 3))
+
     obs = dict()
     for key, value in asdict(full_obs).items():
         if key in ["teams", "factories_per_team"]:
             obs[key] = value
             continue
-        obs[key] = np.full((value.shape[0], 96, 96), -1)
+        expanded_map = np.full((value.shape[0], 96, 96), -1.)
+        obs[key] = np.zeros((value.shape[0]*4, 12, 12))
         for p in range(value.shape[0]):
-            obs[key][p][x:x+48, y:y+48] = value[p]  # unit is in lower right pixel of upper left quadrant
+            expanded_map[p][x:x+48, y:y+48] = value[p]  # unit is in lower right pixel of upper left quadrant
+            obs[key][p*4] = expanded_map[p][42:54, 42:54]  # min map (12x12 area)
+            obs[key][p*4+1] = mean_pool(expanded_map[p][36:60, 36:60], 2)  # med map (24x24 area)
+            obs[key][p*4+2] = mean_pool(expanded_map[p][24:72, 24:72], 4)  # max map (48x48 area)
+            obs[key][p*4+3] = mean_pool(expanded_map[p], 8)  # max map (96x96 area)
     return Observation(**obs)
 
 
