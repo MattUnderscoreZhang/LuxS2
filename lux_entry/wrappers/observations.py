@@ -1,8 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import gym
 from gym import spaces
 import numpy as np
-from typing import Dict, get_type_hints
+from typing import Dict, Tuple, get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -10,7 +10,7 @@ from lux_entry.lux.team import Team
 
 
 @dataclass
-class Observation:
+class FullObservation:
     """
     per map-tile features
     """
@@ -60,9 +60,29 @@ class Observation:
     """
     bidding and factory placement info
     """
-    teams: Dict[str, Team]
-    factories_per_team: int
+    teams: Dict[str, Team]  # not broadcast
+    factories_per_team: int  # not broadcast
     valid_spawns_mask: np.ndarray
+
+
+@dataclass
+class Observation(FullObservation):
+    " A unit's partial observation, drawn from FullObservation and centered around a unit's position. "
+
+
+def partial_obs_from(full_obs: FullObservation, pos: Tuple[int, int]) -> Observation:
+    assert full_obs.tile_has_ice.shape == (1, 48, 48)  # hopefully they don't change the map size
+    x, y = 47 - pos[0], 47 - pos[1]
+
+    obs = dict()
+    for key, value in asdict(full_obs).items():
+        if key in ["teams", "factories_per_team"]:
+            obs[key] = value
+            continue
+        obs[key] = np.full((value.shape[0], 96, 96), -1)
+        for p in range(value.shape[0]):
+            obs[key][p][x:x+48, y:y+48] = value[p]  # unit is in lower right pixel of upper left quadrant
+    return Observation(**obs)
 
 
 class ObservationWrapper(gym.ObservationWrapper):
@@ -72,7 +92,7 @@ class ObservationWrapper(gym.ObservationWrapper):
         map_size = self.env.state.env_cfg.map_size
 
         spaces_dict = spaces.Dict()
-        for key in get_type_hints(Observation).keys():
+        for key in get_type_hints(FullObservation).keys():
             n_features = (
                 2 if "_per_player_" in key
                 else 2 * self.env_cfg.MAX_FACTORIES if key == "tile_has_lichen_strain"
@@ -91,9 +111,10 @@ class ObservationWrapper(gym.ObservationWrapper):
                 else int if key == "factories_per_team"
                 else spaces.Box(low, high, shape=(1, n_features, map_size, map_size))
             )
+        assert spaces_dict.keys() == get_type_hints(FullObservation).keys()
         self.observation_space = spaces_dict
 
-    def observation(self, env_obs: ObservationStateDict) -> Observation:
+    def observation(self, env_obs: ObservationStateDict) -> FullObservation:
         MAX_FS = self.env_cfg.MAX_FACTORIES
         MAX_RUBBLE = self.env_cfg.MAX_RUBBLE
         MAX_LICHEN = self.env_cfg.MAX_LICHEN_PER_TILE
@@ -126,23 +147,23 @@ class ObservationWrapper(gym.ObservationWrapper):
                 if type(value) == spaces.MultiBinary
                 else np.zeros(value.shape[1:]) + value.low[0]
             )
-        obs["tile_has_ice"] = env_obs["board"]["ice"]
-        obs["tile_has_ore"] = env_obs["board"]["ore"]
+        obs["tile_has_ice"][0] = env_obs["board"]["ice"]
+        obs["tile_has_ore"][0] = env_obs["board"]["ore"]
         for i in range (2 * self.env_cfg.MAX_FACTORIES):
             obs["tile_has_lichen_strain"][i] = (env_obs["board"]["lichen_strains"] == i)
-        obs["tile_rubble"] = env_obs["board"]["rubble"] / MAX_RUBBLE
+        obs["tile_rubble"][0] = env_obs["board"]["rubble"] / MAX_RUBBLE
         lichen_strains = [[], []]
         for p, player in enumerate(["player_0", "player_1"]):
             for f in env_obs["factories"][player].values():
                 cargo = f["cargo"]
-                pos = f["pos"]
+                pos = (p, f["pos"][0], f["pos"][1])
                 lichen_strains[p].append(f["strain_id"])
-                obs["tile_per_player_has_factory"][p][pos] = 1
-                obs["tile_per_player_factory_ice_unbounded"][p][pos] = cargo["ice"] / EXP_MAX_F_CARGO
-                obs["tile_per_player_factory_ore_unbounded"][p][pos] = cargo["ore"] / EXP_MAX_F_CARGO
-                obs["tile_per_player_factory_water_unbounded"][p][pos] = cargo["water"] / EXP_MAX_F_WATER
-                obs["tile_per_player_factory_metal_unbounded"][p][pos] = cargo["metal"] / EXP_MAX_F_METAL
-                obs["tile_per_player_factory_power_unbounded"][p][pos] = f["power"] / EXP_MAX_F_POWER
+                obs["tile_per_player_has_factory"][pos] = 1
+                obs["tile_per_player_factory_ice_unbounded"][pos] = cargo["ice"] / EXP_MAX_F_CARGO
+                obs["tile_per_player_factory_ore_unbounded"][pos] = cargo["ore"] / EXP_MAX_F_CARGO
+                obs["tile_per_player_factory_water_unbounded"][pos] = cargo["water"] / EXP_MAX_F_WATER
+                obs["tile_per_player_factory_metal_unbounded"][pos] = cargo["metal"] / EXP_MAX_F_METAL
+                obs["tile_per_player_factory_power_unbounded"][pos] = f["power"] / EXP_MAX_F_POWER
                 obs["total_per_player_factory_ice_unbounded"][p] += cargo["ice"] / EXP_MAX_TOT_F_CARGO
                 obs["total_per_player_factory_ore_unbounded"][p] += cargo["ore"] / EXP_MAX_TOT_F_CARGO
                 obs["total_per_player_factory_water_unbounded"][p] += cargo["water"] / EXP_MAX_TOT_F_WATER
@@ -150,16 +171,16 @@ class ObservationWrapper(gym.ObservationWrapper):
                 obs["total_per_player_factory_power_unbounded"][p] += f["power"] / EXP_MAX_TOT_F_POWER
             for r in env_obs["units"][player].values():
                 cargo = r["cargo"]
-                pos = r["pos"]
-                obs["tile_per_player_has_robot"][p][pos] = 1
-                obs["tile_has_light_robot"][p][pos] = r["unit_type"] == "LIGHT"
-                obs["tile_has_heavy_robot"][p][pos] = r["unit_type"] == "HEAVY"
-                obs["tile_per_player_light_robot_power"][p][pos] = r["power"] / LIGHT_BAT_CAP
-                obs["tile_per_player_light_robot_ice"][p][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
-                obs["tile_per_player_light_robot_ore"][p][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
-                obs["tile_per_player_heavy_robot_power"][p][pos] = r["power"] / HEAVY_BAT_CAP
-                obs["tile_per_player_heavy_robot_ice"][p][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
-                obs["tile_per_player_heavy_robot_ore"][p][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
+                pos = (p, r["pos"][0], r["pos"][1])
+                obs["tile_per_player_has_robot"][pos] = 1
+                obs["tile_has_light_robot"][pos] = r["unit_type"] == "LIGHT"
+                obs["tile_has_heavy_robot"][pos] = r["unit_type"] == "HEAVY"
+                obs["tile_per_player_light_robot_power"][pos] = r["power"] / LIGHT_BAT_CAP
+                obs["tile_per_player_light_robot_ice"][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
+                obs["tile_per_player_light_robot_ore"][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
+                obs["tile_per_player_heavy_robot_power"][pos] = r["power"] / HEAVY_BAT_CAP
+                obs["tile_per_player_heavy_robot_ice"][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
+                obs["tile_per_player_heavy_robot_ore"][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
                 obs["total_per_player_light_robots_unbounded"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "LIGHT")
                 obs["total_per_player_heavy_robots_unbounded"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "HEAVY")
             obs["total_per_player_robots_unbounded"][p] += len(env_obs["units"][player]) / EXP_MAX_RS
@@ -169,14 +190,14 @@ class ObservationWrapper(gym.ObservationWrapper):
             )
             obs["total_per_player_lichen_unbounded"][p] = np.sum(obs["tile_per_player_lichen"][p])
         game_is_day = env_obs["real_env_steps"] % CYCLE_LENGTH < DAY_LENGTH
-        obs["game_is_day"] += game_is_day
-        obs["game_day_or_night_elapsed"] += (
+        obs["game_is_day"][0] += game_is_day
+        obs["game_day_or_night_elapsed"][0] += (
             (env_obs["real_env_steps"] % CYCLE_LENGTH) / DAY_LENGTH if game_is_day
             else (env_obs["real_env_steps"] % CYCLE_LENGTH - DAY_LENGTH) / (CYCLE_LENGTH - DAY_LENGTH)
         )
-        obs["game_time_elapsed"] += env_obs["real_env_steps"] / MAX_EPISODE_LENGTH
+        obs["game_time_elapsed"][0] += env_obs["real_env_steps"] / MAX_EPISODE_LENGTH
         obs["teams"] = env_obs["teams"]
         obs["factories_per_team"] = env_obs["board"]["factories_per_team"]
-        obs["valid_spawns_mask"] = env_obs["board"]["valid_spawns_mask"]
+        obs["valid_spawns_mask"][0] = env_obs["board"]["valid_spawns_mask"]
 
-        return Observation(**obs)
+        return FullObservation(**obs)
