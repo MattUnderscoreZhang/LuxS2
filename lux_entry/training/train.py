@@ -112,7 +112,7 @@ if __name__ == "__main__":
         Path(__file__).parent.parent / "behaviors" / args.behavior / "logs"
     )
     training_args.make_env = importlib.import_module(
-        f"lux_entry.behaviors.{args.behavior}.env"
+        f"lux_entry.behaviors.{args.behavior}.training_env"
     ).make_env
     training_args.eval = args.eval
     training_args.model_path = (

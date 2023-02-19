@@ -6,6 +6,7 @@ from typing import Callable
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 
+from luxai_s2 import LuxAI_S2
 from luxai_s2.state import StatsStateDict
 
 from lux_entry.heuristics import bidding, factory_placement
