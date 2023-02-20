@@ -4,9 +4,10 @@ from typing import Callable, Dict
 
 from luxai_s2.env import LuxAI_S2
 from luxai_s2.state import ObservationStateDict
-from luxai_s2.unit import BidActionType, FactoryPlacementActionType
-from luxai_s2.utils import my_turn_to_place_factory
 
+from lux_entry.heuristics.bidding import BidActionType
+from lux_entry.heuristics.factory_placement import FactoryPlacementActionType
+from lux_entry.lux.utils import my_turn_to_place_factory
 from lux_entry.wrappers.controllers import Controller
 
 

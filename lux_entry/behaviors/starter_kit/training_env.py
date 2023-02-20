@@ -11,11 +11,13 @@ from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.env import LuxAI_S2
 from luxai_s2.state import ObservationStateDict
-from luxai_s2.state import StatsStateDict
-from luxai_s2.unit import BidActionType, FactoryPlacementActionType
-from luxai_s2.utils import my_turn_to_place_factory
 
 from lux_entry.heuristics import bidding, factory_placement
+from lux_entry.lux.stats import StatsStateDict
+from lux_entry.lux.utils import my_turn_to_place_factory
+from lux_entry.wrappers.controllers import ControllerWrapper
+from lux_entry.wrappers.observations import ObservationWrapper
+from lux_entry.wrappers.skip_phases import MainGameOnlyWrapper
 
 
 class Controller:
@@ -38,9 +40,9 @@ class MainGameOnlyWrapper(gym.Wrapper):
     def __init__(
         self,
         env: LuxAI_S2,
-        bid_policy: Callable[[str, ObservationStateDict], Dict[str, BidActionType]],
+        bid_policy: Callable[[str, ObservationStateDict], Dict[str, bidding.BidActionType]],
         factory_placement_policy: Callable[
-            [str, ObservationStateDict], Dict[str, FactoryPlacementActionType]
+            [str, ObservationStateDict], Dict[str, factory_placement.FactoryPlacementActionType]
         ],
         controller: Controller,
     ) -> None:

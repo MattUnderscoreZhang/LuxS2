@@ -6,10 +6,8 @@ from typing import Callable
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 
-from luxai_s2 import LuxAI_S2
-from luxai_s2.state import StatsStateDict
-
 from lux_entry.heuristics import bidding, factory_placement
+from lux_entry.lux.stats import StatsStateDict
 from lux_entry.wrappers.controllers import ControllerWrapper
 from lux_entry.wrappers.observations import ObservationWrapper
 from lux_entry.wrappers.skip_phases import MainGameOnlyWrapper
