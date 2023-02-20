@@ -1,18 +1,10 @@
 import json
-import sys
 from argparse import Namespace
-from typing import Dict
 
-from agent import Agent
-from lux.config import EnvConfig
-from lux.kit import (
-    GameState,
-    from_json,
-    obs_to_game_state,
-    process_action,
-    process_obs,
-    to_json,
-)
+from lux_entry.agent import Agent
+from lux_entry.lux.config import EnvConfig
+from lux_entry.lux.utils import process_action, process_obs
+
 
 ### DO NOT REMOVE THE FOLLOWING CODE ###
 agent_dict = (

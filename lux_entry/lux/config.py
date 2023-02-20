@@ -1,7 +1,6 @@
-import dataclasses
 from argparse import Namespace
-from dataclasses import dataclass
-from typing import Dict, List
+from dataclasses import dataclass, field
+from typing import Dict
 
 
 def convert_dict_to_ns(x):
@@ -90,7 +89,7 @@ class EnvConfig:
     POWER_LOSS_FACTOR: float = 0.5
 
     #### Units ####
-    ROBOTS: Dict[str, UnitConfig] = dataclasses.field(
+    ROBOTS: Dict[str, UnitConfig] = field(
         default_factory=lambda: dict(
             LIGHT=UnitConfig(
                 METAL_COST=10,

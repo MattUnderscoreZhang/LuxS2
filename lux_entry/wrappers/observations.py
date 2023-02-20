@@ -4,9 +4,7 @@ from gym import spaces
 import numpy as np
 from typing import Dict, Tuple, get_type_hints
 
-from luxai_s2.state.state import ObservationStateDict
-
-from lux_entry.lux.team import Team
+from luxai_s2.state.state import ObservationStateDict, Team
 
 
 @dataclass

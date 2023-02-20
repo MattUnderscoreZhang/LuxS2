@@ -35,6 +35,12 @@ class Agent:
         if len(pot_ice_spots) == 0:
             pot_ice_spots = potential_spawns
         trials = 5
+        # import sys
+        # print(obs["board"]["ice"].shape, file=sys.stderr)
+        # print(ice_diff.shape, file=sys.stderr)
+        # print(pot_ice_spots, file=sys.stderr)
+        # print(pot_ice_spots[0], file=sys.stderr)
+        # breakpoint()
         while trials > 0:
             pos_idx = np.random.randint(0, len(pot_ice_spots))
             pos = pot_ice_spots[pos_idx]
