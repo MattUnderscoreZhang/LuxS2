@@ -66,6 +66,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
             action = dict()
             for agent in self.env.agents:
                 if my_turn_to_place_factory(
+                    # TODO: make sure players aren't placing when it's not their turn
                     obs["player_0"]["teams"][agent]["place_first"],
                     self.env.state.env_steps,
                 ):

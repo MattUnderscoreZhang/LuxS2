@@ -13,44 +13,32 @@ class FactoryPlacementActionType(TypedDict):
 
 
 def factory_placement_policy(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
-    potential_spawns = np.array(
-        list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
-    )
-    spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
-    return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
-
-
-def random_factory_placement(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
-    """
-    This policy places factories with 150 water and metal at random locations
-    """
-    # we will spawn our factory in a random location with 150 metal and water if it is our turn to place
     potential_spawns = np.array(list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1))))
     spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
     return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
 
 
-def place_near_random_ice(player: Player, obs: ObservationStateDict):
-    if obs["teams"][player]["metal"] == 0:
-        return dict()
+def random_factory_placement(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
+    potential_spawns = np.array(list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1))))
+    spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
+    return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
+
+
+# TODO: game fps shifts between >3000 and ~400 depending on very small changes here - figure out why
+def place_near_random_ice(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
     potential_spawns = list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
     potential_spawns_set = set(potential_spawns)
-    done_search = False
-    # if player == "player_1":
-    ice_diff = np.diff(obs["board"]["ice"])
+    # ice_diff = np.diff(obs["board"]["ice"])
+    ice_diff = obs["board"]["ice"]
     pot_ice_spots = np.argwhere(ice_diff == 1)
-    if len(pot_ice_spots) == 0:
-        pot_ice_spots = potential_spawns
-    trials = 5
-    while trials > 0:
-        pos_idx = np.random.randint(0, len(pot_ice_spots))
-        pos = pot_ice_spots[pos_idx]
-        assert len(pos) == 2
-
-        area = 3
-        for x in range(area):
-            for y in range(area):
-                check_pos = [pos[0] + x - area // 2, pos[1] + y - area // 2]
+    done_search = len(pot_ice_spots) == 0
+    factory_size = 3
+    pos = None
+    for _ in range(5):
+        pos = pot_ice_spots[np.random.randint(0, len(pot_ice_spots))]
+        for x in range(factory_size):
+            for y in range(factory_size):
+                check_pos = [pos[0] + x - factory_size // 2, pos[1] + y - factory_size // 2]
                 if tuple(check_pos) in potential_spawns_set:
                     done_search = True
                     pos = check_pos
@@ -59,10 +47,11 @@ def place_near_random_ice(player: Player, obs: ObservationStateDict):
                 break
         if done_search:
             break
-        trials -= 1
-    spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
-    if not done_search:
-        pos = spawn_loc
-
+    pos = (
+        np.array(potential_spawns[np.random.randint(0, len(potential_spawns))])
+        if not done_search
+        else np.array(pos)
+    )
     metal = obs["teams"][player]["metal"]
-    return FactoryPlacementActionType(spawn=pos, metal=metal, water=metal)
+    water = obs["teams"][player]["water"]
+    return FactoryPlacementActionType(spawn=pos, metal=metal, water=water)

@@ -7,6 +7,8 @@ from lux_entry.lux.state import Board, Cargo, FactionTypes, Factory, GameState, 
 
 
 def my_turn_to_place_factory(place_first: bool, step: int):
+    import sys
+    print(place_first, step, file=sys.stderr)
     if place_first:
         if step % 2 == 1:
             return True

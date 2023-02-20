@@ -3,7 +3,6 @@ import gym
 from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
 import numpy as np
-import numpy.typing as npt
 from typing import Any, Callable, Dict
 
 from stable_baselines3.common.monitor import Monitor
@@ -36,11 +35,11 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = spaces.Box(-999, 999, shape=(13,))
 
     def observation(self, obs):
-        return ObservationWrapper.convert_obs(obs, self.env.state.env_cfg)
+        return ObservationWrapper.get_custom_obs(obs, self.env.state.env_cfg)
 
     # we make this method static so the submission/evaluation code can use this as well
     @staticmethod
-    def convert_obs(obs: Dict[Player, Any], env_cfg: Any) -> Dict[str, npt.NDArray]:
+    def get_custom_obs(obs: Dict[Player, Any], env_cfg: Any) -> Dict[Player, np.ndarray]:
         observation = dict()
         shared_obs = obs["player_0"]
         ice_map = shared_obs["board"]["ice"]

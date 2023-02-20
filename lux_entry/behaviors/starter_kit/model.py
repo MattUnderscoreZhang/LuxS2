@@ -15,7 +15,7 @@ WEIGHTS_PATH = osp.join(this_directory, "logs/models/best_model.zip")
 class Net(nn.Module):
     def __init__(self, len_output: int = 12):
         super(Net, self).__init__()
-        self.model = nn.Sequential(
+        self.net = nn.Sequential(
             nn.Linear(13, 128),
             nn.Tanh(),
             nn.Linear(128, 128),
@@ -24,7 +24,7 @@ class Net(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        x = self.model(x)
+        x = self.net(x)
         return x
 
     def act(
