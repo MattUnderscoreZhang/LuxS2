@@ -3,9 +3,24 @@ from enum import Enum
 import math
 import numpy as np
 from termcolor import colored
-from typing import Dict, List
+from typing import Dict, List, Literal, Union
 
 from lux_entry.lux.config import EnvConfig, UnitConfig
+
+
+# Player = Union[Literal["player_0"], Literal["player_1"]]
+Player = str
+
+
+class Direction:
+    CENTER = 0
+    UP = 1
+    RIGHT = 2
+    DOWN = 3
+    LEFT = 4
+
+
+move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
 
 
 @dataclass
@@ -73,9 +88,6 @@ class Cargo:
     water: int = 0
     metal: int = 0
 
-# a[1] = direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
-move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
-
 
 @dataclass
 class Unit:
@@ -90,7 +102,7 @@ class Unit:
     action_queue: List
 
     @property
-    def agent_id(self):
+    def agent_id(self) -> Player:
         if self.team_id == 0:
             return "player_0"
         return "player_1"

@@ -1,13 +1,5 @@
-from argparse import Namespace
 from dataclasses import dataclass, field
 from typing import Dict
-
-
-def convert_dict_to_ns(x):
-    if isinstance(x, dict):
-        for k in x:
-            x[k] = convert_dict_to_ns(x)
-        return Namespace(x)
 
 
 @dataclass

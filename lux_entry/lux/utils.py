@@ -3,7 +3,7 @@ import numpy as np
 from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.lux.config import EnvConfig
-from lux_entry.lux.state import Board, Cargo, FactionTypes, Factory, GameState, Team, Unit
+from lux_entry.lux.state import Board, Cargo, FactionTypes, Factory, GameState, Player, Team, Unit
 
 
 def my_turn_to_place_factory(place_first: bool, step: int):
@@ -69,7 +69,7 @@ def from_json(state):
         return state
 
 
-def process_obs(player, game_state, step, obs):
+def process_obs(player: Player, game_state, step, obs):
     if step == 0:
         # at step 0 we get the entire map information
         game_state = from_json(obs)

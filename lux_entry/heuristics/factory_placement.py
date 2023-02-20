@@ -3,6 +3,8 @@ import numpy as np
 
 from luxai_s2.state import ObservationStateDict
 
+from lux_entry.lux.state import Player
+
 
 class FactoryPlacementActionType(TypedDict):
     metal: int
@@ -10,7 +12,7 @@ class FactoryPlacementActionType(TypedDict):
     spawn: np.ndarray
 
 
-def factory_placement_policy(player, obs: ObservationStateDict) -> FactoryPlacementActionType:
+def factory_placement_policy(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
     potential_spawns = np.array(
         list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
     )
@@ -18,7 +20,7 @@ def factory_placement_policy(player, obs: ObservationStateDict) -> FactoryPlacem
     return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
 
 
-def random_factory_placement(player, obs: ObservationStateDict) -> FactoryPlacementActionType:
+def random_factory_placement(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
     """
     This policy places factories with 150 water and metal at random locations
     """
@@ -28,7 +30,7 @@ def random_factory_placement(player, obs: ObservationStateDict) -> FactoryPlacem
     return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
 
 
-def place_near_random_ice(player, obs: ObservationStateDict):
+def place_near_random_ice(player: Player, obs: ObservationStateDict):
     if obs["teams"][player]["metal"] == 0:
         return dict()
     potential_spawns = list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
@@ -43,6 +45,7 @@ def place_near_random_ice(player, obs: ObservationStateDict):
     while trials > 0:
         pos_idx = np.random.randint(0, len(pot_ice_spots))
         pos = pot_ice_spots[pos_idx]
+        assert len(pos) == 2
 
         area = 3
         for x in range(area):

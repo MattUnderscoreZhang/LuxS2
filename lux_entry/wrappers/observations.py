@@ -6,6 +6,8 @@ from typing import Dict, Tuple, get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict, Team
 
+from lux_entry.lux.state import Player
+
 
 @dataclass
 class FullObservation:
@@ -121,7 +123,7 @@ class ObservationWrapper(gym.ObservationWrapper):
         assert spaces_dict.keys() == get_type_hints(FullObservation).keys()
         self.observation_space = spaces_dict
 
-    def observation(self, env_obs: ObservationStateDict) -> FullObservation:
+    def observation(self, env_obs_both_players: Dict[Player, ObservationStateDict]) -> FullObservation:
         MAX_FS = self.env_cfg.MAX_FACTORIES
         MAX_RUBBLE = self.env_cfg.MAX_RUBBLE
         MAX_LICHEN = self.env_cfg.MAX_LICHEN_PER_TILE
@@ -144,7 +146,7 @@ class ObservationWrapper(gym.ObservationWrapper):
         DAY_LENGTH = self.env_cfg.DAY_LENGTH
         MAX_EPISODE_LENGTH = self.env_cfg.max_episode_length
 
-        env_obs = env_obs["player_0"]  # env_obs["player_0"] == env_obs["player_1"]
+        env_obs = env_obs_both_players["player_0"]  # env_obs["player_0"] == env_obs["player_1"]
         obs = dict()
         for key, value in self.observation_space.items():
             if key in ["teams", "factories_per_team"]:

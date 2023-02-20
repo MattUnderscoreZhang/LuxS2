@@ -10,7 +10,7 @@ from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.wrappers.controllers import ControllerWrapper
 from lux_entry.wrappers.observations import ObservationWrapper
-from lux_entry.wrappers.skip_phases import MainGameOnlyWrapper
+from lux_entry.wrappers.skip_phases import MainGameOnlyWrapper, MainGameOnlyEnvWrapper
 
 
 class EnvWrapper(gym.Wrapper):
@@ -70,6 +70,10 @@ class EnvWrapper(gym.Wrapper):
         return obs
 
 
+bid_policy = bidding.zero_bid
+factory_placement_policy = factory_placement.place_near_random_ice
+
+
 def make_env(
     env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
 ) -> Callable[[], gym.Env]:
@@ -77,17 +81,13 @@ def make_env(
         env = gym.make(env_id, verbose=0, collect_stats=True, MAX_FACTORIES=2)
         env = MainGameOnlyWrapper(
             env,
-            bid_policy=bidding.zero_bid,
-            factory_placement_policy=factory_placement.place_near_random_ice,
+            bid_policy=bid_policy,
+            factory_placement_policy=factory_placement_policy,
             controller=ControllerWrapper(env.env_cfg),
         )
-        env = ObservationWrapper(
-            env
-        )  # changes observation to include a few simple features
-        env = EnvWrapper(env)  # convert to single agent, add our reward
-        env = TimeLimit(
-            env, max_episode_steps=max_episode_steps
-        )  # set horizon to 100 to make training faster. Default is 1000
+        env = ObservationWrapper(env)
+        env = MainGameOnlyEnvWrapper(env)
+        env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
         set_random_seed(seed)
