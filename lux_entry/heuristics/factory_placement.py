@@ -12,16 +12,13 @@ class FactoryPlacementActionType(TypedDict):
     spawn: np.ndarray
 
 
-def factory_placement_policy(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
-    potential_spawns = np.array(list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1))))
-    spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
-    return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
-
-
 def random_factory_placement(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
     potential_spawns = np.array(list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1))))
     spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
-    return FactoryPlacementActionType(spawn=spawn_loc, metal=150, water=150)
+    metal = obs["teams"][player]["metal"]
+    water = obs["teams"][player]["water"]
+    factories_to_place = obs["teams"][player]["factories_to_place"]
+    return FactoryPlacementActionType(spawn=spawn_loc, metal=metal/factories_to_place, water=water/factories_to_place)
 
 
 # TODO: game fps shifts between >3000 and ~400 depending on very small changes here - figure out why
@@ -56,4 +53,5 @@ def place_near_random_ice(player: Player, obs: ObservationStateDict) -> FactoryP
     )
     metal = obs["teams"][player]["metal"]
     water = obs["teams"][player]["water"]
-    return FactoryPlacementActionType(spawn=pos, metal=metal, water=water)
+    factories_to_place = obs["teams"][player]["factories_to_place"]
+    return FactoryPlacementActionType(spawn=pos, metal=metal/factories_to_place, water=water/factories_to_place)
