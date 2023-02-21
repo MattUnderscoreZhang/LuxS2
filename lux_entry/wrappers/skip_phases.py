@@ -1,6 +1,6 @@
 import copy
 import gym
-import numpy.typing as npt
+import numpy as np
 from typing import Callable, Dict
 
 from luxai_s2.env import LuxAI_S2
@@ -33,14 +33,14 @@ class MainGameOnlyWrapper(gym.Wrapper):
         self.bid_policy = bid_policy
         self.prev_obs = None
 
-    def step(self, action: Dict[str, npt.NDArray]):
+    def step(self, player_actions: Dict[Player, np.ndarray]):
         # here, for each agent in the game we translate their action into a Lux S2 action
         lux_action = dict()
         for agent in self.env.agents:
-            if agent in action:
+            if agent in player_actions:
                 assert self.prev_obs is not None
                 lux_action[agent] = self.controller.action_to_lux_action(
-                    agent=agent, obs=self.prev_obs, action=action[agent]
+                    agent=agent, obs=self.prev_obs, action=player_actions[agent]
                 )
             else:
                 lux_action[agent] = dict()
@@ -55,25 +55,24 @@ class MainGameOnlyWrapper(gym.Wrapper):
         obs = self.env.reset(**kwargs)
 
         # then use the bid policy to go through the bidding phase
-        action = dict()
+        player_actions = dict()
         for agent in self.env.agents:
-            action[agent] = self.bid_policy(agent, obs[agent])
-        obs, _, _, _ = self.env.step(action)
+            player_actions[agent] = self.bid_policy(agent, obs[agent])
+        obs, _, _, _ = self.env.step(player_actions)
 
         # while real_env_steps < 0, we are in the factory placement phase
         # so we use the factory placement policy to step through this
         while self.env.state.real_env_steps < 0:
-            action = dict()
+            player_actions = dict()
             for agent in self.env.agents:
                 if my_turn_to_place_factory(
-                    # TODO: make sure players aren't placing when it's not their turn
                     obs["player_0"]["teams"][agent]["place_first"],
                     self.env.state.env_steps,
                 ):
-                    action[agent] = self.factory_placement_policy(agent, obs[agent])
+                    player_actions[agent] = self.factory_placement_policy(agent, obs[agent])
                 else:
-                    action[agent] = dict()
-            obs, _, _, _ = self.env.step(action)
+                    player_actions[agent] = dict()
+            obs, _, _, _ = self.env.step(player_actions)
         self.prev_obs = obs
 
         return obs

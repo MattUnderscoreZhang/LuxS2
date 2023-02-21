@@ -5,10 +5,10 @@ import sys
 import torch
 import zipfile
 
-from lux_entry.lux.state import Player
-
 # change this to import a different behavior
 from lux_entry.behaviors.starter_kit import model, env
+from lux_entry.lux.state import Player
+from lux_entry.lux.utils import my_turn_to_place_factory
 
 
 class Agent:
@@ -27,7 +27,14 @@ class Agent:
         return env.bid_policy(player=self.player, obs=obs)
 
     def factory_placement_policy(self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60):
-        return env.factory_placement_policy(player=self.player, obs=obs)
+        return (
+            env.factory_placement_policy(player=self.player, obs=obs)
+            if my_turn_to_place_factory(
+                obs["teams"][self.player]["place_first"],
+                step,
+            )
+            else dict()
+        )
 
     def act(self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60):
         raw_obs = {
