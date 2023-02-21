@@ -28,14 +28,16 @@ def random_factory_placement(player: Player, obs: ObservationStateDict) -> Facto
 def place_near_random_ice(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
     potential_spawns = list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
     potential_spawns_set = set(potential_spawns)
-    # ice_diff = np.diff(obs["board"]["ice"])
-    ice_diff = obs["board"]["ice"]
-    pot_ice_spots = np.argwhere(ice_diff == 1)
-    done_search = len(pot_ice_spots) == 0
+    # find all places to the left of a block of ice
+    pot_ice_spots = np.argwhere(np.diff(obs["board"]["ice"]) == 1)
+    if len(pot_ice_spots) == 0:
+        pot_ice_spots = potential_spawns
     factory_size = 3
     pos = None
+    done_search = False
     for _ in range(5):
         pos = pot_ice_spots[np.random.randint(0, len(pot_ice_spots))]
+        assert len(pos) == 2
         for x in range(factory_size):
             for y in range(factory_size):
                 check_pos = [pos[0] + x - factory_size // 2, pos[1] + y - factory_size // 2]
