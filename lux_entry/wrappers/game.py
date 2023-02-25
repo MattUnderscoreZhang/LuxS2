@@ -11,7 +11,7 @@ from lux_entry.heuristics.factory_placement import FactoryPlacementActionType
 from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
-from lux_entry.wrappers.controllers import Controller
+from lux_entry.wrappers import controllers
 
 
 class MainGameOnlyWrapper(gym.Wrapper):
@@ -20,7 +20,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
         env: LuxAI_S2,
         bid_policy: Callable[[Player, ObservationStateDict], BidActionType],
         factory_placement_policy: Callable[[Player, ObservationStateDict], FactoryPlacementActionType],
-        controller: Controller,
+        controller: controllers.type.ControllerType,
     ) -> None:
         """
         Sets the bidding and factory placement policies.
@@ -78,7 +78,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
         return obs
 
 
-class MainGameOnlyEnvWrapper(gym.Wrapper):
+class SinglePlayerWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env) -> None:
         """Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training"""
         super().__init__(env)
