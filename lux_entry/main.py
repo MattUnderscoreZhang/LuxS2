@@ -12,7 +12,7 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
 
 # change this to import a different behavior
-from lux_entry.behaviors.starter_kit import model, env
+from lux_entry.behaviors.starter_kit import env
 
 
 class Agent:
@@ -22,7 +22,7 @@ class Agent:
         self.env_cfg: EnvConfig = env_cfg
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.net = load_net(model.Net, model.WEIGHTS_PATH)
+        self.net = load_net(env.Net, env.WEIGHTS_PATH)
         self.net.eval().to(device)
 
         self.controller = env.controller.Controller(self.env_cfg)
@@ -58,7 +58,7 @@ class Agent:
         )
 
 
-def load_net(model_class: type[model.Net], model_path: str) -> model.Net:
+def load_net(model_class: type[env.Net], model_path: str) -> env.Net:
     # load .pth or .zip
     if model_path[-4:] == ".zip":
         with zipfile.ZipFile(model_path) as archive:

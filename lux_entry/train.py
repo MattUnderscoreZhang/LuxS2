@@ -108,7 +108,7 @@ if __name__ == "__main__":
     ) as f:
         training_args = argparse.Namespace(**yaml.safe_load(f))
     training_args.model = importlib.import_module(
-        f"lux_entry.behaviors.{args.behavior}.model"
+        f"lux_entry.behaviors.{args.behavior}.env"
     ).model
     training_args.make_env = importlib.import_module(
         f"lux_entry.behaviors.{args.behavior}.env"

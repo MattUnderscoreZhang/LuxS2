@@ -1,13 +1,24 @@
+import argparse
 import gym
 from gym.wrappers.time_limit import TimeLimit
-from typing import Callable
+import os.path as osp
+import torch
+from torch import nn
+from torch.functional import Tensor
+from typing import Any, Callable
 
+from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
 
+from luxai_s2.state.state import ObservationStateDict
+
 from lux_entry.heuristics import bidding, factory_placement
+from lux_entry.lux.config import EnvConfig
+from lux_entry.lux.state import Player
 from lux_entry.wrappers import controllers
 from lux_entry.wrappers import observations
+from lux_entry.wrappers.controllers.type import ControllerType
 from lux_entry.wrappers.game import MainGameOnlyWrapper, SinglePlayerWrapper
 
 
@@ -37,6 +48,50 @@ def make_env(
         return env
 
     return _init
+
+
+this_directory = osp.dirname(__file__)
+WEIGHTS_PATH = osp.join(this_directory, "logs/models/best_model.zip")
+
+
+class Net(nn.Module):
+    def __init__(self, len_output: int = 12):
+        super(Net, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(13, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, len_output),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.net(x)
+        return x
+
+    def act(
+        self, x: Tensor, action_masks: Tensor, deterministic: bool = False
+    ) -> Tensor:
+        action_logits = self.forward(x)
+        action_logits[~action_masks] = -1e8  # mask out invalid actions
+        dist = torch.distributions.Categorical(logits=action_logits)
+        return dist.mode if deterministic else dist.sample()
+
+
+def model(env: Any, args: argparse.Namespace):
+    return PPO(
+        "MlpPolicy",
+        env,
+        n_steps=args.rollout_steps // args.n_envs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        policy_kwargs=dict(net_arch=(128, 128)),
+        verbose=1,
+        n_epochs=2,
+        target_kl=args.target_kl,
+        gamma=args.gamma,
+        tensorboard_log=osp.join(args.log_path),
+    )
 
 
 def act(
