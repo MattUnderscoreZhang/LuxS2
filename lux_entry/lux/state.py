@@ -107,11 +107,11 @@ class Unit:
             return "player_0"
         return "player_1"
 
-    def action_queue_cost(self, game_state: 'GameState'):
+    def action_queue_cost(self, game_state: "GameState"):
         cost = self.env_cfg.ROBOTS[self.unit_type].ACTION_QUEUE_POWER_COST
         return cost
 
-    def move_cost(self, game_state: 'GameState', direction):
+    def move_cost(self, game_state: "GameState", direction):
         board = game_state.board
         target_pos = self.pos + move_deltas[direction]
         if (
@@ -144,7 +144,12 @@ class Unit:
         return np.array([0, direction, 0, 0, repeat, n])
 
     def transfer(
-        self, transfer_direction, transfer_resource: int, transfer_amount: int, repeat: int = 0, n: int = 1
+        self,
+        transfer_direction,
+        transfer_resource: int,
+        transfer_amount: int,
+        repeat: int = 0,
+        n: int = 1,
     ):
         assert transfer_resource < 5 and transfer_resource >= 0
         assert transfer_direction < 5 and transfer_direction >= 0
@@ -152,17 +157,19 @@ class Unit:
             [1, transfer_direction, transfer_resource, transfer_amount, repeat, n]
         )
 
-    def pickup(self, pickup_resource: int, pickup_amount: int, repeat: int = 0, n: int = 1):
+    def pickup(
+        self, pickup_resource: int, pickup_amount: int, repeat: int = 0, n: int = 1
+    ):
         assert pickup_resource < 5 and pickup_resource >= 0
         return np.array([2, 0, pickup_resource, pickup_amount, repeat, n])
 
-    def dig_cost(self, game_state: 'GameState'):
+    def dig_cost(self, game_state: "GameState"):
         return self.unit_cfg.DIG_COST
 
     def dig(self, repeat: int = 0, n: int = 1):
         return np.array([3, 0, 0, 0, repeat, n])
 
-    def self_destruct_cost(self, game_state: 'GameState'):
+    def self_destruct_cost(self, game_state: "GameState"):
         return self.unit_cfg.SELF_DESTRUCT_COST
 
     def self_destruct(self, repeat: int = 0, n: int = 1):
@@ -188,15 +195,15 @@ class Factory:
     # lichen_tiles: np.ndarray
     env_cfg: EnvConfig
 
-    def build_heavy_metal_cost(self, game_state: 'GameState'):
+    def build_heavy_metal_cost(self, game_state: "GameState"):
         unit_cfg = self.env_cfg.ROBOTS["HEAVY"]
         return unit_cfg.METAL_COST
 
-    def build_heavy_power_cost(self, game_state: 'GameState'):
+    def build_heavy_power_cost(self, game_state: "GameState"):
         unit_cfg = self.env_cfg.ROBOTS["HEAVY"]
         return unit_cfg.POWER_COST
 
-    def can_build_heavy(self, game_state: 'GameState'):
+    def can_build_heavy(self, game_state: "GameState"):
         return self.power >= self.build_heavy_power_cost(
             game_state
         ) and self.cargo.metal >= self.build_heavy_metal_cost(game_state)
@@ -204,15 +211,15 @@ class Factory:
     def build_heavy(self):
         return 1
 
-    def build_light_metal_cost(self, game_state: 'GameState'):
+    def build_light_metal_cost(self, game_state: "GameState"):
         unit_cfg = self.env_cfg.ROBOTS["LIGHT"]
         return unit_cfg.METAL_COST
 
-    def build_light_power_cost(self, game_state: 'GameState'):
+    def build_light_power_cost(self, game_state: "GameState"):
         unit_cfg = self.env_cfg.ROBOTS["LIGHT"]
         return unit_cfg.POWER_COST
 
-    def can_build_light(self, game_state: 'GameState'):
+    def can_build_light(self, game_state: "GameState"):
         return self.power >= self.build_light_power_cost(
             game_state
         ) and self.cargo.metal >= self.build_light_metal_cost(game_state)
@@ -220,14 +227,14 @@ class Factory:
     def build_light(self):
         return 0
 
-    def water_cost(self, game_state: 'GameState'):
+    def water_cost(self, game_state: "GameState"):
         """
         Water required to perform water action
         """
         owned_lichen_tiles = (game_state.board.lichen_strains == self.strain_id).sum()
         return np.ceil(owned_lichen_tiles / self.env_cfg.LICHEN_WATERING_COST_FACTOR)
 
-    def can_water(self, game_state: 'GameState'):
+    def can_water(self, game_state: "GameState"):
         return self.cargo.water >= self.water_cost(game_state)
 
     def water(self):

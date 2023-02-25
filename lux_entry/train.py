@@ -103,7 +103,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    with open(Path(__file__).parent / "train_configs" / (args.training_conf + ".yaml")) as f:
+    with open(
+        Path(__file__).parent / "train_configs" / (args.training_conf + ".yaml")
+    ) as f:
         training_args = argparse.Namespace(**yaml.safe_load(f))
     training_args.model = importlib.import_module(
         f"lux_entry.behaviors.{args.behavior}.model"

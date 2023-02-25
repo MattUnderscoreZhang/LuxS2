@@ -6,7 +6,6 @@ from typing import Any, Dict
 from lux_entry.lux.state import Player
 
 
-
 class ObservationWrapper(gym.ObservationWrapper):
     """
     A simple state based observation to work with in pair with the SimpleUnitDiscreteController
@@ -31,7 +30,9 @@ class ObservationWrapper(gym.ObservationWrapper):
 
     # we make this method static so the submission/evaluation code can use this as well
     @staticmethod
-    def get_custom_obs(two_player_env_obs: Dict[Player, Any], env_cfg: Any) -> Dict[Player, np.ndarray]:
+    def get_custom_obs(
+        two_player_env_obs: Dict[Player, Any], env_cfg: Any
+    ) -> Dict[Player, np.ndarray]:
         observation = dict()
         shared_obs = two_player_env_obs["player_0"]
         ice_map = shared_obs["board"]["ice"]

@@ -3,7 +3,16 @@ import numpy as np
 from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.lux.config import EnvConfig
-from lux_entry.lux.state import Board, Cargo, FactionTypes, Factory, GameState, Player, Team, Unit
+from lux_entry.lux.state import (
+    Board,
+    Cargo,
+    FactionTypes,
+    Factory,
+    GameState,
+    Player,
+    Team,
+    Unit,
+)
 
 
 def my_turn_to_place_factory(place_first: bool, step: int):

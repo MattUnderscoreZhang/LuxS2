@@ -110,11 +110,11 @@ class StatsStateDict(TypedDict):
 
 def create_empty_stats() -> StatsStateDict:
     return StatsStateDict(
-        action_queue_updates_total = 0,
-        action_queue_updates_success = 0,
-        consumption = create_consumption_stats(),
-        destroyed = create_destroyed_stats(),
-        generation = create_generation_stats(),
-        pickup = create_transfer_pickup_stats(),
-        transfer = create_transfer_pickup_stats(),
+        action_queue_updates_total=0,
+        action_queue_updates_success=0,
+        consumption=create_consumption_stats(),
+        destroyed=create_destroyed_stats(),
+        generation=create_generation_stats(),
+        pickup=create_transfer_pickup_stats(),
+        transfer=create_transfer_pickup_stats(),
     )

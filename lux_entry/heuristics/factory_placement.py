@@ -12,17 +12,27 @@ class FactoryPlacementActionType(TypedDict):
     spawn: np.ndarray
 
 
-def random_factory_placement(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
-    potential_spawns = np.array(list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1))))
+def random_factory_placement(
+    player: Player, obs: ObservationStateDict
+) -> FactoryPlacementActionType:
+    potential_spawns = np.array(
+        list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
+    )
     spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
     metal = obs["teams"][player]["metal"]
     water = obs["teams"][player]["water"]
     factories_to_place = obs["teams"][player]["factories_to_place"]
-    return FactoryPlacementActionType(spawn=spawn_loc, metal=metal/factories_to_place, water=water/factories_to_place)
+    return FactoryPlacementActionType(
+        spawn=spawn_loc,
+        metal=metal / factories_to_place,
+        water=water / factories_to_place,
+    )
 
 
 # TODO: game fps shifts between >3000 and ~400 depending on very small changes here - figure out why
-def place_near_random_ice(player: Player, obs: ObservationStateDict) -> FactoryPlacementActionType:
+def place_near_random_ice(
+    player: Player, obs: ObservationStateDict
+) -> FactoryPlacementActionType:
     potential_spawns = list(zip(*np.where(obs["board"]["valid_spawns_mask"] == 1)))
     potential_spawns_set = set(potential_spawns)
     # find all places to the left of a block of ice
@@ -37,7 +47,10 @@ def place_near_random_ice(player: Player, obs: ObservationStateDict) -> FactoryP
         assert len(pos) == 2
         for x in range(factory_size):
             for y in range(factory_size):
-                check_pos = [pos[0] + x - factory_size // 2, pos[1] + y - factory_size // 2]
+                check_pos = [
+                    pos[0] + x - factory_size // 2,
+                    pos[1] + y - factory_size // 2,
+                ]
                 if tuple(check_pos) in potential_spawns_set:
                     done_search = True
                     pos = check_pos
@@ -54,4 +67,6 @@ def place_near_random_ice(player: Player, obs: ObservationStateDict) -> FactoryP
     metal = obs["teams"][player]["metal"]
     water = obs["teams"][player]["water"]
     factories_to_place = obs["teams"][player]["factories_to_place"]
-    return FactoryPlacementActionType(spawn=pos, metal=metal/factories_to_place, water=water/factories_to_place)
+    return FactoryPlacementActionType(
+        spawn=pos, metal=metal / factories_to_place, water=water / factories_to_place
+    )

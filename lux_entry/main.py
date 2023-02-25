@@ -27,10 +27,14 @@ class Agent:
 
         self.controller = env.controller.Controller(self.env_cfg)
 
-    def bid_policy(self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60):
+    def bid_policy(
+        self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
+    ):
         return env.bid_policy(player=self.player, obs=obs)
 
-    def factory_placement_policy(self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60):
+    def factory_placement_policy(
+        self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
+    ):
         return (
             env.factory_placement_policy(player=self.player, obs=obs)
             if my_turn_to_place_factory(
@@ -40,28 +44,18 @@ class Agent:
             else dict()
         )
 
-    def act(self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60):
-        two_player_env_obs = {
-            "player_0": env_obs,
-            "player_1": env_obs,
-        }
-        obs = env.observation_wrapper.ObservationWrapper.get_custom_obs(two_player_env_obs, env_cfg=self.env_cfg)
-
-        with torch.no_grad():
-            action_mask = (
-                torch.from_numpy(self.controller.action_masks(self.player, two_player_env_obs))
-                .unsqueeze(0)  # we unsqueeze/add an extra batch dimension =
-                .bool()
-            )
-            obs_arr = torch.from_numpy(obs[self.player]).float()
-            actions = (
-                self.net.act(
-                    obs_arr.unsqueeze(0), deterministic=False, action_masks=action_mask
-                )
-                .cpu()
-                .numpy()
-            )
-        return self.controller.action_to_lux_action(self.player, two_player_env_obs, actions[0])
+    def act(
+        self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60
+    ):
+        return env.act(
+            step=step,
+            env_obs=env_obs,
+            remainingOverageTime=remainingOverageTime,
+            player=self.player,
+            env_cfg=self.env_cfg,
+            controller=self.controller,
+            net=self.net,
+        )
 
 
 def load_net(model_class: type[model.Net], model_path: str) -> model.Net:

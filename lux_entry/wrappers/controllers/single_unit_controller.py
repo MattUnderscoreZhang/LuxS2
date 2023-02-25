@@ -74,9 +74,7 @@ class Controller(ControllerType):
     def _get_dig_action(self, id):
         return np.array([3, 0, 0, 0, 0, 1])
 
-    def action_to_lux_action(
-        self, agent: str, obs: Dict[str, Any], action: np.ndarray
-    ):
+    def action_to_lux_action(self, agent: str, obs: Dict[str, Any], action: np.ndarray):
         shared_obs = obs["player_0"]
         lux_action = dict()
         units = shared_obs["units"][agent]

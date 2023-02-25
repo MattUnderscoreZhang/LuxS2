@@ -19,7 +19,9 @@ class MainGameOnlyWrapper(gym.Wrapper):
         self,
         env: LuxAI_S2,
         bid_policy: Callable[[Player, ObservationStateDict], BidActionType],
-        factory_placement_policy: Callable[[Player, ObservationStateDict], FactoryPlacementActionType],
+        factory_placement_policy: Callable[
+            [Player, ObservationStateDict], FactoryPlacementActionType
+        ],
         controller: controllers.type.ControllerType,
     ) -> None:
         """
@@ -69,7 +71,9 @@ class MainGameOnlyWrapper(gym.Wrapper):
                     obs["player_0"]["teams"][agent]["place_first"],
                     self.env.state.env_steps,
                 ):
-                    player_actions[agent] = self.factory_placement_policy(agent, obs[agent])
+                    player_actions[agent] = self.factory_placement_policy(
+                        agent, obs[agent]
+                    )
                 else:
                     player_actions[agent] = dict()
             obs, _, _, _ = self.env.step(player_actions)
