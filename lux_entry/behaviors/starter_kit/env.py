@@ -1,7 +1,8 @@
 import argparse
 import gym
+from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
-import os.path as osp
+from os import path
 import torch
 from torch import nn
 from torch.functional import Tensor
@@ -31,10 +32,10 @@ observation_wrapper = observations.starter_kit_observations
 
 
 def make_env(
-    env_id: str, rank: int, seed: int = 0, max_episode_steps: int = 100
+    rank: int, seed: int = 0, max_episode_steps: int = 100
 ) -> Callable[[], gym.Env]:
     def _init() -> gym.Env:
-        env = gym.make(env_id, verbose=0, collect_stats=True, MAX_FACTORIES=2)
+        env = gym.make(id="LuxAI_S2-v0", verbose=0, collect_stats=True, MAX_FACTORIES=2)
         env = MainGameOnlyWrapper(
             env,
             bid_policy=bid_policy,
@@ -52,27 +53,25 @@ def make_env(
     return _init
 
 
-this_directory = osp.dirname(__file__)
-WEIGHTS_PATH = osp.join(this_directory, "logs/models/best_model.zip")
+WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
+n_features = 128
 
 
+# Net has to take no inputs
 class Net(nets.MlpNet):
     def __init__(self):
-        super().__init__(
-            n_observables=13,
-            n_features=128,
-            n_actions=12,
-        )
+        global n_features
+        super().__init__(n_observables=13, n_features=n_features, n_actions=12)
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Box):
-        n_features = 128
+    def __init__(self, observation_space: spaces.Box):
+        global n_features
         super().__init__(observation_space, n_features)
         self.net = Net()
 
-    def forward(self, observations: Tensor) -> Tensor:
-        return self.net.extract_features(observations)
+    def forward(self, obs: Tensor) -> Tensor:
+        return self.net.extract_features(obs)
 
 
 def model(env: Any, args: argparse.Namespace):
@@ -91,7 +90,7 @@ def model(env: Any, args: argparse.Namespace):
         n_epochs=2,
         target_kl=args.target_kl,
         gamma=args.gamma,
-        tensorboard_log=osp.join(args.log_path),
+        tensorboard_log=path.join(args.log_path),
     )
 
 

@@ -24,38 +24,7 @@ class Agent:
         self.net = self._load_net(env.Net, env.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.eval().to(device)
-
         self.controller = env.controller.Controller(self.env_cfg)
-
-    def bid_policy(
-        self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
-    ):
-        return env.bid_policy(player=self.player, obs=obs)
-
-    def factory_placement_policy(
-        self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
-    ):
-        return (
-            env.factory_placement_policy(player=self.player, obs=obs)
-            if my_turn_to_place_factory(
-                obs["teams"][self.player]["place_first"],
-                step,
-            )
-            else dict()
-        )
-
-    def act(
-        self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60
-    ):
-        return env.act(
-            step=step,
-            env_obs=env_obs,
-            remainingOverageTime=remainingOverageTime,
-            player=self.player,
-            env_cfg=self.env_cfg,
-            controller=self.controller,
-            net=self.net,
-        )
 
     def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
         # load .pth or .zip
@@ -72,8 +41,9 @@ class Agent:
 
         net_keys = []
         for sb3_key in sb3_state_dict.keys():
-            if sb3_key.startswith("features_extractor.") or sb3_key.startswith("action_net."):
+            if sb3_key.startswith("pi_features_extractor."):
                 net_keys.append(sb3_key)
+                # TODO: should check that features_extractor keys are identical to pi_features_extractor, vf_features_extractor, and mlp_extractor keys
 
         net = model_class()
         loaded_state_dict = {}
@@ -83,6 +53,36 @@ class Agent:
 
         net.load_state_dict(loaded_state_dict)
         return net
+
+    def bid_policy(
+        self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
+    ):
+        return env.bid_policy(player=self.player, obs=obs)
+
+    def factory_placement_policy(
+        self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
+    ):
+        return (
+            env.factory_placement_policy(player=self.player, obs=obs)
+            if my_turn_to_place_factory(
+                obs["teams"][self.player]["place_first"],
+                step,
+            )
+            else dict()  # empty action since it's not our turn
+        )
+
+    def act(
+        self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60
+    ):
+        return env.act(
+            step=step,
+            env_obs=env_obs,
+            remainingOverageTime=remainingOverageTime,
+            player=self.player,
+            env_cfg=self.env_cfg,
+            controller=self.controller,
+            net=self.net,
+        )
 
 
 ### DO NOT REMOVE THE FOLLOWING CODE ###

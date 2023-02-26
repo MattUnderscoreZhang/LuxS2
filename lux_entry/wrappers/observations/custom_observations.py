@@ -2,6 +2,7 @@ from dataclasses import dataclass, asdict
 import gym
 from gym import spaces
 import numpy as np
+import torch
 from typing import Dict, Tuple, get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict, Team
@@ -104,6 +105,10 @@ def partial_obs_from(full_obs: FullObservation, pos: Tuple[int, int]) -> Observa
             )  # max map (48x48 area)
             obs[key][p * 4 + 3] = mean_pool(expanded_map[p], 8)  # max map (96x96 area)
     return Observation(**obs)
+
+
+def convert_obs_to_tensor(obs: Observation, all_observables: list[str], pass_through_observables: list[str]) -> torch.Tensor:
+    ...
 
 
 class ObservationWrapper(gym.ObservationWrapper):

@@ -27,9 +27,9 @@ class TensorboardCallback(BaseCallback):
         return True
 
 
-def train(args: argparse.Namespace, env_id: str, model: BaseAlgorithm):
+def train(args: argparse.Namespace, model: BaseAlgorithm):
     eval_env = SubprocVecEnv(
-        [args.make_env(env_id, i, max_episode_steps=1000) for i in range(4)]
+        [args.make_env(i, max_episode_steps=1000) for i in range(4)]
     )
     eval_callback = EvalCallback(
         eval_env,
@@ -47,11 +47,11 @@ def train(args: argparse.Namespace, env_id: str, model: BaseAlgorithm):
     model.save(osp.join(args.log_path, "models/latest_model"))
 
 
-def evaluate(args: argparse.Namespace, env_id: str, model: BaseAlgorithm):
+def evaluate(args: argparse.Namespace, model: BaseAlgorithm):
     model = model.load(args.model_path)
     video_length = 1000  # default horizon
     eval_env = SubprocVecEnv(
-        [args.make_env(env_id, i, max_episode_steps=1000) for i in range(args.n_envs)]
+        [args.make_env(i, max_episode_steps=1000) for i in range(args.n_envs)]
     )
     eval_env = VecVideoRecorder(
         eval_env,
@@ -69,18 +69,17 @@ def main(args: argparse.Namespace):
     print("Training with args", args)
     if args.seed is not None:
         set_random_seed(args.seed)
-    env_id = "LuxAI_S2-v0"
     env = SubprocVecEnv(
         [
-            args.make_env(env_id, i, max_episode_steps=args.max_episode_steps)
+            args.make_env(i, max_episode_steps=args.max_episode_steps)
             for i in range(args.n_envs)
         ]
     )
     env.reset()
     if args.eval:
-        evaluate(args, env_id, args.model(env, args))
+        evaluate(args, args.model(env, args))
     else:
-        train(args, env_id, args.model(env, args))
+        train(args, args.model(env, args))
 
 
 if __name__ == "__main__":

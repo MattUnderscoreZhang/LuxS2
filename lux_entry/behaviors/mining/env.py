@@ -1,7 +1,8 @@
 import argparse
 import gym
+from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
-import os.path as osp
+from os import path
 import torch
 from torch import nn
 from torch.functional import Tensor
@@ -52,26 +53,27 @@ def make_env(
     return _init
 
 
-this_directory = osp.dirname(__file__)
-WEIGHTS_PATH = osp.join(this_directory, "logs/models/best_model.zip")
-
-
-class Net(nets.DictFeatureNet):
-    def __init__(self, n_observables: int, n_features: int, n_actions: int):
-        super().__init__(
-            n_observables=n_observables,
-            n_features=n_features,
-            n_actions=n_actions,
-        )
+Net = nets.DictFeatureNet
+WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Box, n_observables: int, n_features: int, n_actions: int):
-        super().__init__(observation_space, n_features)
-        self.net = Net(n_observables, n_features, n_actions)
+    def __init__(self, observation_space: spaces.Box, all_observables: list[str], pass_through_observables: list[str], n_actions: int):
+        super().__init__(observation_space, features_dim=1)
+        self.all_observables = all_observables
+        self.pass_through_observables = pass_through_observables
+        n_features = 0
+        # 150x13x13 -> 1x1 conv -> 30x13x13 -> 3x3 conv + 5x5 conv -> 30x13x13 -> 1x1 conv -> 5x13x13 -> ravel -> 845 -> FC -> 64 -> FC -> action space
+        self._features_dim = n_features
+        self.net = Net(n_conv_layers, n_pass_through_layers, n_features, n_actions)
 
-    def forward(self, observations: Tensor) -> Tensor:
-        return self.net.extract_features(observations)
+    def forward(self, obs: observation_wrapper.Observation) -> Tensor:
+        extracted_obs = None
+        for observable in self.all_observables:
+            extracted_obs += obs[observable]
+        for observable in self.pass_through_observables:
+            extracted_obs += obs[observable]
+        return self.net.extract_features(obs)
 
 
 def model(env: Any, args: argparse.Namespace):
@@ -95,7 +97,7 @@ def model(env: Any, args: argparse.Namespace):
         n_epochs=2,
         target_kl=args.target_kl,
         gamma=args.gamma,
-        tensorboard_log=osp.join(args.log_path),
+        tensorboard_log=path.join(args.log_path),
     )
 
 
