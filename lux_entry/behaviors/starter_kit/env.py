@@ -9,10 +9,12 @@ from typing import Any, Callable
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.state.state import ObservationStateDict
 
+from lux_entry.behaviors import nets
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
@@ -54,28 +56,22 @@ this_directory = osp.dirname(__file__)
 WEIGHTS_PATH = osp.join(this_directory, "logs/models/best_model.zip")
 
 
-class Net(nn.Module):
-    def __init__(self, len_output: int = 12):
-        super(Net, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(13, 128),
-            nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, len_output),
+class Net(nets.MlpNet):
+    def __init__(self):
+        super().__init__(
+            n_observables=13,
+            n_features=128,
+            n_actions=12,
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.net(x)
-        return x
 
-    def act(
-        self, x: Tensor, action_masks: Tensor, deterministic: bool = False
-    ) -> Tensor:
-        action_logits = self.forward(x)
-        action_logits[~action_masks] = -1e8  # mask out invalid actions
-        dist = torch.distributions.Categorical(logits=action_logits)
-        return dist.mode if deterministic else dist.sample()
+class CustomFeatureExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: gym.spaces.Box, n_features: int, n_actions: int):
+        super().__init__(observation_space, n_features)
+        self.net = Net(n_features, n_actions)
+
+    def forward(self, observations: Tensor) -> Tensor:
+        return self.net.extract_features(observations)
 
 
 def model(env: Any, args: argparse.Namespace):
@@ -85,7 +81,11 @@ def model(env: Any, args: argparse.Namespace):
         n_steps=args.rollout_steps // args.n_envs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        policy_kwargs=dict(net_arch=(128, 128)),
+        policy_kwargs={
+            "features_extractor_class": CustomFeatureExtractor,
+        },
+        # SB3 adds a fully-connected net after the feature extractor
+        # fully-connected hidden-layer shapes can be manually specified here via the net_arch parameter
         verbose=1,
         n_epochs=2,
         target_kl=args.target_kl,

@@ -21,8 +21,8 @@ class Agent:
         self.opp_player = "player_1" if self.player == "player_0" else "player_0"
         self.env_cfg: EnvConfig = env_cfg
 
+        self.net = self._load_net(env.Net, env.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.net = load_net(env.Net, env.WEIGHTS_PATH)
         self.net.eval().to(device)
 
         self.controller = env.controller.Controller(self.env_cfg)
@@ -57,30 +57,32 @@ class Agent:
             net=self.net,
         )
 
+    def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
+        # load .pth or .zip
+        if model_path[-4:] == ".zip":
+            with zipfile.ZipFile(model_path) as archive:
+                file_path = "policy.pth"
+                with archive.open(file_path, mode="r") as param_file:
+                    file_content = io.BytesIO()
+                    file_content.write(param_file.read())
+                    file_content.seek(0)
+                    sb3_state_dict = torch.load(file_content, map_location="cpu")
+        else:
+            sb3_state_dict = torch.load(model_path, map_location="cpu")
 
-def load_net(model_class: type[env.Net], model_path: str) -> env.Net:
-    # load .pth or .zip
-    if model_path[-4:] == ".zip":
-        with zipfile.ZipFile(model_path) as archive:
-            file_path = "policy.pth"
-            with archive.open(file_path, mode="r") as param_file:
-                file_content = io.BytesIO()
-                file_content.write(param_file.read())
-                file_content.seek(0)
-                sb3_state_dict = torch.load(file_content, map_location="cpu")
-    else:
-        sb3_state_dict = torch.load(model_path, map_location="cpu")
+        net_keys = []
+        for sb3_key in sb3_state_dict.keys():
+            if sb3_key.startswith("features_extractor.") or sb3_key.startswith("action_net."):
+                net_keys.append(sb3_key)
 
-    net = model_class()
-    loaded_state_dict = {}
+        net = model_class()
+        loaded_state_dict = {}
+        for sb3_key, model_key in zip(net_keys, net.state_dict().keys()):
+            loaded_state_dict[model_key] = sb3_state_dict[sb3_key]
+            print("loaded", sb3_key, "->", model_key, file=sys.stderr)
 
-    # this code here works assuming the first keys in the sb3 state dict are aligned with the ones you define above in Net
-    for sb3_key, model_key in zip(sb3_state_dict.keys(), net.state_dict().keys()):
-        loaded_state_dict[model_key] = sb3_state_dict[sb3_key]
-        print("loaded", sb3_key, "->", model_key, file=sys.stderr)
-
-    net.load_state_dict(loaded_state_dict)
-    return net
+        net.load_state_dict(loaded_state_dict)
+        return net
 
 
 ### DO NOT REMOVE THE FOLLOWING CODE ###
@@ -103,7 +105,6 @@ def agent_fn(observation, configurations):
         env_cfg = EnvConfig.from_dict(configurations["env_cfg"])
         agent_dict[player] = Agent(player, env_cfg)
         agent_prev_obs[player] = dict()
-        agent = agent_dict[player]
     agent = agent_dict[player]
     obs = process_obs(player, agent_prev_obs[player], step, json.loads(observation.obs))
     agent_prev_obs[player] = obs
