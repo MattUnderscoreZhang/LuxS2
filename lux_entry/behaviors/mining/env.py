@@ -57,18 +57,18 @@ WEIGHTS_PATH = osp.join(this_directory, "logs/models/best_model.zip")
 
 
 class Net(nets.DictFeatureNet):
-    def __init__(self):
+    def __init__(self, n_observables: int, n_features: int, n_actions: int):
         super().__init__(
-            n_observables=13,
-            n_features=128,
-            n_actions=12,
+            n_observables=n_observables,
+            n_features=n_features,
+            n_actions=n_actions,
         )
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Box, n_features: int, n_actions: int):
+    def __init__(self, observation_space: gym.spaces.Box, n_observables: int, n_features: int, n_actions: int):
         super().__init__(observation_space, n_features)
-        self.net = Net(n_features, n_actions)
+        self.net = Net(n_observables, n_features, n_actions)
 
     def forward(self, observations: Tensor) -> Tensor:
         return self.net.extract_features(observations)
@@ -84,6 +84,7 @@ def model(env: Any, args: argparse.Namespace):
         policy_kwargs={
             "features_extractor_class": CustomFeatureExtractor,
             "features_extractor_kwargs": {
+                "n_observables": 13,
                 "n_features": 128,
                 "n_actions": 12,
             },

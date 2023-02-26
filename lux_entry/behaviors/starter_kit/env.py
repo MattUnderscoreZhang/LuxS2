@@ -66,9 +66,10 @@ class Net(nets.MlpNet):
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Box, n_features: int, n_actions: int):
+    def __init__(self, observation_space: gym.spaces.Box):
+        n_features = 128
         super().__init__(observation_space, n_features)
-        self.net = Net(n_features, n_actions)
+        self.net = Net()
 
     def forward(self, observations: Tensor) -> Tensor:
         return self.net.extract_features(observations)
