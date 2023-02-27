@@ -113,7 +113,7 @@ class CustomFeatureExtractor(BaseFeaturesExtractor):
                 # # obs_dict.tile_per_player_factory_metal_unbounded,
                 # # obs_dict.tile_per_player_factory_power_unbounded,
                 # # # [[obs_dict.broadcast features]]
-                # # # obs_dict.normalized and positive unbounded
+                # # # [obs_dict.normalized and positive unbounded]
                 # # obs_dict.total_per_player_robots_unbounded,
                 # # obs_dict.total_per_player_light_robots_unbounded,
                 # # obs_dict.total_per_player_heavy_robots_unbounded,
@@ -124,7 +124,7 @@ class CustomFeatureExtractor(BaseFeaturesExtractor):
                 # # obs_dict.total_per_player_factory_metal_unbounded,
                 # # obs_dict.total_per_player_factory_power_unbounded,
                 # # obs_dict.total_per_player_lichen_unbounded,
-                # # # obs_dict.normalized from 0-1
+                # # # [obs_dict.normalized from 0-1]
                 # # obs_dict.game_is_day,
                 # # obs_dict.game_day_or_night_elapsed,
                 # # obs_dict.game_time_elapsed,
