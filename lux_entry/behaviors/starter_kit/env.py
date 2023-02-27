@@ -54,20 +54,18 @@ def make_env(
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
-n_features = 128
+N_FEATURES = 128
 
 
 # Net has to take no inputs
 class Net(nets.MlpNet):
     def __init__(self):
-        global n_features
-        super().__init__(n_observables=13, n_features=n_features, n_actions=12)
+        super().__init__(n_observables=13, n_features=N_FEATURES, n_actions=12)
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Box):
-        global n_features
-        super().__init__(observation_space, n_features)
+        super().__init__(observation_space, N_FEATURES)
         self.net = Net()
 
     def forward(self, obs: Tensor) -> Tensor:

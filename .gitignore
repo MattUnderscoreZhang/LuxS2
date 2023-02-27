@@ -6,3 +6,4 @@ luxai_s2
 *.pyc
 *.html
 *.ipynb_checkpoints
+__pycache__

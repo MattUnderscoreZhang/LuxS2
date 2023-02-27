@@ -107,10 +107,6 @@ def partial_obs_from(full_obs: FullObservation, pos: Tuple[int, int]) -> Observa
     return Observation(**obs)
 
 
-def convert_obs_to_tensor(obs: Observation, all_observables: list[str], pass_through_observables: list[str]) -> torch.Tensor:
-    ...
-
-
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env) -> None:
         super().__init__(env)
