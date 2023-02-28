@@ -1,6 +1,6 @@
 import pytest
 
-from lux_entry.wrappers.observations import custom_observations, utils
+from lux_entry.components.observations import custom_observations, utils
 
 
 @pytest.fixture

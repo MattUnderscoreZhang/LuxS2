@@ -1,5 +1,5 @@
 import numpy as np
-from typing import TypeVar
+from typing import Any, Union
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -49,7 +49,10 @@ def process_action(action):
     return to_json(action)
 
 
-def to_json(obj):
+Json = Any
+
+
+def to_json(obj: Any) -> Json:
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, np.integer):
@@ -67,8 +70,7 @@ def to_json(obj):
         return obj
 
 
-T = TypeVar("T")
-def from_json(state: T) -> T:
+def from_json(state: Json) -> Any:
     if isinstance(state, list):
         return np.array(state)
     elif isinstance(state, dict):
@@ -80,12 +82,14 @@ def from_json(state: T) -> T:
         return state
 
 
-def process_obs(player: Player, game_state: ObservationStateDict, step: int, obs: ObservationStateDict) -> ObservationStateDict:
+def process_obs(player: Player, game_state: Union[ObservationStateDict, None], step: int, obs: Json) -> ObservationStateDict:
     if step == 0:
         # at step 0 we get the entire map information
         game_state = from_json(obs)
+        assert game_state is not None
     else:
         # use delta changes to board to update game state
+        assert game_state is not None
         obs = from_json(obs)
         for k in obs:
             if k != "board":

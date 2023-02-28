@@ -16,15 +16,10 @@ from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.behaviors import nets
+from lux_entry.components import nets, observations, controller, game, observations
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
-from lux_entry.wrappers import observations
-from lux_entry.wrappers.controller import Controller
-from lux_entry.wrappers.game import MainGameOnlyWrapper, SinglePlayerWrapper
-from lux_entry.wrappers.observations.custom_observations import partial_obs_from
-from lux_entry.wrappers.observations.utils import construct_obs
 
 
 bid_policy = bidding.zero_bid
@@ -37,14 +32,14 @@ def make_env(
 ) -> Callable[[], gym.Env]:
     def _init() -> gym.Env:
         env = gym.make(id="LuxAI_S2-v0", verbose=0, collect_stats=True, MAX_FACTORIES=2)
-        env = MainGameOnlyWrapper(
+        env = game.MainGameOnlyWrapper(
             env,
             bid_policy=bid_policy,
             factory_placement_policy=factory_placement_policy,
-            controller=controller.Controller(env.env_cfg),
+            controller=EnvController(env.env_cfg),
         )
         env = observation_wrapper.ObservationWrapper(env)
-        env = SinglePlayerWrapper(env)
+        env = game.SinglePlayerWrapper(env)
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -84,7 +79,7 @@ class CustomFeatureExtractor(BaseFeaturesExtractor):
         self._features_dim = n_features
         self.net = Net()
 
-    def forward(self, obs: observation_wrapper.Observation) -> Tensor:
+    def forward(self, conv_obs: Tensor, skip_obs: Tensor) -> Tensor:
         return self.net.extract_features(conv_obs, skip_obs)
 
 
@@ -119,11 +114,11 @@ def act(
     remainingOverageTime: int,
     player: Player,
     env_cfg: EnvConfig,
-    controller: Controller,
+    controller: controller.Controller,
     net: nn.Module,
 ):
-    unit_obs = partial_obs_from(env_obs, controller.loc)
-    conv_obs, skip_obs = construct_obs(
+    unit_obs = observation_wrapper.partial_obs_from(env_obs, controller.loc)
+    conv_obs, skip_obs = observations.utils.construct_obs(
         conv_obs=[
             unit_obs.tile_has_ice,
             unit_obs.tile_per_player_has_factory,
@@ -163,7 +158,7 @@ def act(
     return controller.action_to_lux_action(player, two_player_env_obs, actions[0])
 
 
-class EnvController(Controller):
+class EnvController(controller.Controller):
     def __init__(self, env_cfg) -> None:
         """
         A simple controller that controls only the robot that will get spawned.

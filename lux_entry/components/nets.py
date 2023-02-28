@@ -51,12 +51,12 @@ class DictFeatureNet(nn.Module):
         )
         self.fc = nn.Linear(self.n_features, self.n_actions)
 
-    def extract_features(self, x: Tensor) -> Tensor:
-        x = self.net(x)
+    def extract_features(self, conv_obs: Tensor, skip_obs: Tensor) -> Tensor:
+        x = self.net(conv_obs)
         return x
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.extract_features(x)
+    def forward(self, conv_obs: Tensor, skip_obs: Tensor) -> Tensor:
+        x = self.net(conv_obs)
         x = self.fc(x[:, :self.n_features])
         return x
 

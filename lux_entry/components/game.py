@@ -11,7 +11,7 @@ from lux_entry.heuristics.factory_placement import FactoryPlacementActionType
 from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
-from lux_entry.wrappers.controller import Controller
+from lux_entry.components.controller import Controller
 
 
 class MainGameOnlyWrapper(gym.Wrapper):

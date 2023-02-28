@@ -3,14 +3,15 @@ import io
 import json
 import sys
 import torch
+from typing import Any, Dict, Union
 import zipfile
 
 from luxai_s2.state.state import ObservationStateDict
 
+from lux_entry.components import controller
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
-from lux_entry.wrappers.controller import Controller
 
 # change this to import a different behavior
 from lux_entry.behaviors.starter_kit import env
@@ -24,7 +25,7 @@ class Agent:
         self.net: env.Net = self._load_net(env.Net, env.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.eval().to(device)
-        self.controller: Controller = env.EnvController(self.env_cfg)
+        self.controller: controller.Controller = env.EnvController(self.env_cfg)
 
     def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
         # load .pth or .zip
@@ -86,13 +87,14 @@ class Agent:
 
 
 ### DO NOT REMOVE THE FOLLOWING CODE ###
-agent_dict = (
-    dict()
-)  # store potentially multiple dictionaries as kaggle imports code directly
-agent_prev_obs = dict()
+agent_dict: Dict[Player, Agent] = dict()
+agent_prev_obs: Dict[Player, Union[ObservationStateDict, None]] = dict()
 
 
-def agent_fn(observation, configurations):
+Json = Any
+
+
+def agent_fn(observation: Namespace, configurations: Dict) -> Json:
     """
     agent definition for kaggle submission.
     """
@@ -102,13 +104,12 @@ def agent_fn(observation, configurations):
     player = observation.player
     remainingOverageTime = observation.remainingOverageTime
     if step == 0:
-        env_cfg = EnvConfig.from_dict(configurations["env_cfg"])
+        env_cfg: EnvConfig = EnvConfig.from_dict(configurations["env_cfg"])
         agent_dict[player] = Agent(player, env_cfg)
-        agent_prev_obs[player] = dict()
+        agent_prev_obs[player] = None
     agent = agent_dict[player]
     obs = process_obs(player, agent_prev_obs[player], step, json.loads(observation.obs))
     agent_prev_obs[player] = obs
-    agent.step = step
     if step == 0:
         actions = agent.bid_policy(step, obs, remainingOverageTime)
     elif obs["real_env_steps"] < 0:
