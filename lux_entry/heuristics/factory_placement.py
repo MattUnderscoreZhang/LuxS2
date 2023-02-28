@@ -23,9 +23,7 @@ def random_factory_placement(
     water = obs["teams"][player]["water"]
     factories_to_place = obs["teams"][player]["factories_to_place"]
     return FactoryPlacementActionType(
-        spawn=spawn_loc,
-        metal=metal / factories_to_place,
-        water=water / factories_to_place,
+        spawn=spawn_loc, metal=metal//factories_to_place, water=water//factories_to_place,
     )
 
 
@@ -68,5 +66,5 @@ def place_near_random_ice(
     water = obs["teams"][player]["water"]
     factories_to_place = obs["teams"][player]["factories_to_place"]
     return FactoryPlacementActionType(
-        spawn=pos, metal=metal / factories_to_place, water=water / factories_to_place
+        spawn=pos, metal=metal//factories_to_place, water=water//factories_to_place
     )

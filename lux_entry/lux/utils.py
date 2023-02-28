@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Any, Union
+from typing import Any, Dict, Union
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -107,7 +107,8 @@ def process_obs(player: Player, game_state: Union[ObservationStateDict, None], s
     return game_state
 
 
-def obs_to_game_state(step, env_cfg: EnvConfig, obs: ObservationStateDict):
+# never used anywhere
+def obs_to_game_state(step, env_cfg: EnvConfig, obs: Dict) -> GameState:
     units = dict()
     for agent in obs["units"]:
         units[agent] = dict()

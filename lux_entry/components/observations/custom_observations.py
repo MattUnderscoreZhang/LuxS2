@@ -67,11 +67,11 @@ class FullObservation:
 
 
 @dataclass
-class Observation(FullObservation):
+class UnitObservation(FullObservation):
     "A unit's partial observation, drawn from FullObservation and centered around a unit's position."
 
 
-def partial_obs_from(full_obs: FullObservation, pos: Tuple[int, int]) -> Observation:
+def unit_obs_at(full_obs: FullObservation, pos: Tuple[int, int]) -> UnitObservation:
     assert full_obs.tile_has_ice.shape == (
         1,
         48,
@@ -104,7 +104,7 @@ def partial_obs_from(full_obs: FullObservation, pos: Tuple[int, int]) -> Observa
                 expanded_map[p][24:72, 24:72], 4
             )  # max map (48x48 area)
             obs[key][p * 4 + 3] = mean_pool(expanded_map[p], 8)  # max map (96x96 area)
-    return Observation(**obs)
+    return UnitObservation(**obs)
 
 
 class ObservationWrapper(gym.ObservationWrapper):

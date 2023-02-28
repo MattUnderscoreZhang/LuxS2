@@ -17,7 +17,7 @@ def test_get_partial_obs_around_unit():
     ...
 
 
-def test_construct_obs(obs_dict: custom_observations.Observation):
+def test_construct_obs(obs_dict: custom_observations.UnitObservation):
     # TODO: write test
     pass
     # test_convert_obs_to_tensor(all_observables: list[np.ndarray], pass_through_observables: list[np.ndarray])

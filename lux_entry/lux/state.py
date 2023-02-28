@@ -3,7 +3,7 @@ from enum import Enum
 import math
 import numpy as np
 from termcolor import colored
-from typing import Dict, List, Literal, Union
+from typing import Dict, List
 
 from lux_entry.lux.config import EnvConfig, UnitConfig
 

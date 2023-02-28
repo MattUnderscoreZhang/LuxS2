@@ -10,87 +10,77 @@ from lux_entry.lux.state import Player
 
 
 class ObservationWrapper(gym.ObservationWrapper):
-    """
-    A simple state based observation to work with in pair with the SimpleUnitDiscreteController
-
-    It contains info only on the first robot, the first factory you own, and some useful features.
-    If there are no owned robots the observation is just zero.
-    No information about the opponent is included. This will generate observations for all teams.
-
-    Included features:
-    - First robot's stats
-    - distance vector to closest ice tile
-    - distance vector to first factory
-
-    """
-
     def __init__(self, env: gym.Env) -> None:
+        """
+        This wrapper returns a dual-player observation with some simple calculated features.
+        """
         super().__init__(env)
         self.observation_space = spaces.Box(-999, 999, shape=(13,))
 
     def observation(self, two_player_env_obs: Dict[Player, ObservationStateDict]):
+        """
+        This takes in a dual-player observation from the underlying BaseWrapper environment.
+        The custom obs calculation function is static so the submission/evaluation code can use it.
+        The custom obs is returned to the wrapper around this one when it calls step.
+        """
         return ObservationWrapper.get_custom_obs(two_player_env_obs, self.env.state.env_cfg)
 
-    # we make this method static so the submission/evaluation code can use this as well
     @staticmethod
     def get_custom_obs(
         two_player_env_obs: Dict[Player, ObservationStateDict], env_cfg: EnvConfig
     ) -> Dict[Player, np.ndarray]:
+        """
+        Return obs contains info on your first robot, your first factory, and some useful features.
+        No information about the opponent is included. This returns a set of obs for each player.
+        If there are no owned robots the observation is just zero.
+
+        Included features:
+        - First robot's stats
+        - distance vector to closest ice tile
+        - distance vector to first factory
+        """
         observation = dict()
-        shared_obs = two_player_env_obs["player_0"]
-        ice_map = shared_obs["board"]["ice"]
+        env_obs = two_player_env_obs["player_0"]
+        ice_map = env_obs["board"]["ice"]
         ice_tile_locations = np.argwhere(ice_map == 1)
 
         for agent in two_player_env_obs.keys():
-            obs_vec = np.zeros(
-                13,
-            )
-
-            factories = shared_obs["factories"][agent]
             factory_vec = np.zeros(2)
-            for k in factories.keys():
-                # here we track a normalized position of the first friendly factory
-                factory = factories[k]
+            for factory in env_obs["factories"][agent].values():
                 factory_vec = np.array(factory["pos"]) / env_cfg.map_size
-                break
-            units = shared_obs["units"][agent]
-            for k in units.keys():
-                unit = units[k]
+                break  # just the first factory
 
-                # store cargo+power values scaled to [0, 1]
+            obs_vec = np.zeros(13,)
+            for unit in env_obs["units"][agent].values():
                 cargo_space = env_cfg.ROBOTS[unit["unit_type"]].CARGO_SPACE
                 battery_cap = env_cfg.ROBOTS[unit["unit_type"]].BATTERY_CAPACITY
-                cargo_vec = np.array(
-                    [
-                        unit["power"] / battery_cap,
-                        unit["cargo"]["ice"] / cargo_space,
-                        unit["cargo"]["ore"] / cargo_space,
-                        unit["cargo"]["water"] / cargo_space,
-                        unit["cargo"]["metal"] / cargo_space,
-                    ]
-                )
+                cargo_vec = np.array([
+                    unit["power"] / battery_cap,
+                    unit["cargo"]["ice"] / cargo_space,
+                    unit["cargo"]["ore"] / cargo_space,
+                    unit["cargo"]["water"] / cargo_space,
+                    unit["cargo"]["metal"] / cargo_space,
+                ])
                 unit_type = (
                     0 if unit["unit_type"] == "LIGHT" else 1
                 )  # note that build actions use 0 to encode Light
-                # normalize the unit position
                 pos = np.array(unit["pos"]) / env_cfg.map_size
                 unit_vec = np.concatenate(
                     [pos, [unit_type], cargo_vec, [unit["team_id"]]], axis=-1
                 )
 
-                # we add some engineered features down here
-                # compute closest ice tile
+                # add distance to closest ice tile and to factory
                 ice_tile_distances = np.mean(
                     (ice_tile_locations - np.array(unit["pos"])) ** 2, 1
                 )
-                # normalize the ice tile location
                 closest_ice_tile = (
                     ice_tile_locations[np.argmin(ice_tile_distances)] / env_cfg.map_size
                 )
                 obs_vec = np.concatenate(
                     [unit_vec, factory_vec - pos, closest_ice_tile - pos], axis=-1
                 )
-                break
+                break  # just the first unit
+
             observation[agent] = obs_vec
 
         return observation

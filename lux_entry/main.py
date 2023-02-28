@@ -8,7 +8,7 @@ import zipfile
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components import controller
+from lux_entry.components.controllers.type import Controller
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
@@ -25,9 +25,10 @@ class Agent:
         self.net: env.Net = self._load_net(env.Net, env.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.eval().to(device)
-        self.controller: controller.Controller = env.EnvController(self.env_cfg)
+        self.controller: Controller = env.EnvController(self.env_cfg)
 
     def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
+        # TODO: try replacing function with evaluate() in train.py
         # load .pth or .zip
         if model_path[-4:] == ".zip":
             with zipfile.ZipFile(model_path) as archive:
@@ -44,7 +45,7 @@ class Agent:
         for sb3_key in sb3_state_dict.keys():
             if sb3_key.startswith("pi_features_extractor."):
                 net_keys.append(sb3_key)
-                # TODO: should check that features_extractor keys are identical to pi_features_extractor, vf_features_extractor, and mlp_extractor keys
+                # TODO: check if f.e. keys are == pi_f.e., vf_f.e., mlp_e.
 
         net = model_class()
         loaded_state_dict = {}
