@@ -11,7 +11,7 @@ from lux_entry.heuristics.factory_placement import FactoryPlacementActionType
 from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
-from lux_entry.wrappers import controllers
+from lux_entry.wrappers.controller import Controller
 
 
 class MainGameOnlyWrapper(gym.Wrapper):
@@ -22,7 +22,7 @@ class MainGameOnlyWrapper(gym.Wrapper):
         factory_placement_policy: Callable[
             [Player, ObservationStateDict], FactoryPlacementActionType
         ],
-        controller: controllers.type.ControllerType,
+        controller: Controller,
     ) -> None:
         """
         Sets the bidding and factory placement policies.

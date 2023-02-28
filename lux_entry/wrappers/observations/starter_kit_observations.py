@@ -1,8 +1,11 @@
 import gym
 from gym import spaces
 import numpy as np
-from typing import Any, Dict
+from typing import Dict
 
+from luxai_s2.state.state import ObservationStateDict
+
+from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 
 
@@ -25,13 +28,13 @@ class ObservationWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.observation_space = spaces.Box(-999, 999, shape=(13,))
 
-    def observation(self, obs):
-        return ObservationWrapper.get_custom_obs(obs, self.env.state.env_cfg)
+    def observation(self, two_player_env_obs: Dict[Player, ObservationStateDict]):
+        return ObservationWrapper.get_custom_obs(two_player_env_obs, self.env.state.env_cfg)
 
     # we make this method static so the submission/evaluation code can use this as well
     @staticmethod
     def get_custom_obs(
-        two_player_env_obs: Dict[Player, Any], env_cfg: Any
+        two_player_env_obs: Dict[Player, ObservationStateDict], env_cfg: EnvConfig
     ) -> Dict[Player, np.ndarray]:
         observation = dict()
         shared_obs = two_player_env_obs["player_0"]

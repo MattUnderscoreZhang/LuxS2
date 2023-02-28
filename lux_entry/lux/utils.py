@@ -1,4 +1,5 @@
 import numpy as np
+from typing import TypeVar
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -15,7 +16,7 @@ from lux_entry.lux.state import (
 )
 
 
-def my_turn_to_place_factory(place_first: bool, step: int):
+def my_turn_to_place_factory(place_first: bool, step: int) -> bool:
     if place_first:
         if step % 2 == 1:
             return True
@@ -26,7 +27,7 @@ def my_turn_to_place_factory(place_first: bool, step: int):
 
 
 # direction (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
-def direction_to(src, target):
+def direction_to(src, target) -> int:
     ds = target - src
     dx = ds[0]
     dy = ds[1]
@@ -66,7 +67,8 @@ def to_json(obj):
         return obj
 
 
-def from_json(state):
+T = TypeVar("T")
+def from_json(state: T) -> T:
     if isinstance(state, list):
         return np.array(state)
     elif isinstance(state, dict):
@@ -78,7 +80,7 @@ def from_json(state):
         return state
 
 
-def process_obs(player: Player, game_state, step, obs):
+def process_obs(player: Player, game_state: ObservationStateDict, step: int, obs: ObservationStateDict) -> ObservationStateDict:
     if step == 0:
         # at step 0 we get the entire map information
         game_state = from_json(obs)

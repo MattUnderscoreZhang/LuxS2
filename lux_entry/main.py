@@ -10,6 +10,7 @@ from luxai_s2.state.state import ObservationStateDict
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
+from lux_entry.wrappers.controller import Controller
 
 # change this to import a different behavior
 from lux_entry.behaviors.starter_kit import env
@@ -17,14 +18,13 @@ from lux_entry.behaviors.starter_kit import env
 
 class Agent:
     def __init__(self, player: Player, env_cfg: EnvConfig) -> None:
-        self.player = player
-        self.opp_player = "player_1" if self.player == "player_0" else "player_0"
+        self.player: Player = player
         self.env_cfg: EnvConfig = env_cfg
 
-        self.net = self._load_net(env.Net, env.WEIGHTS_PATH)
+        self.net: env.Net = self._load_net(env.Net, env.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.eval().to(device)
-        self.controller = env.controller.Controller(self.env_cfg)
+        self.controller: Controller = env.EnvController(self.env_cfg)
 
     def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
         # load .pth or .zip
@@ -137,6 +137,13 @@ if __name__ == "__main__":
     while True:
         inputs = read_input()
         obs = json.loads(inputs)
+        # obs dict:
+        #   step: int
+        #   obs: dict
+        #   remainingOverageTime: int
+        #   player: int
+        #   reward: float
+        #   info: dict
 
         observation = Namespace(
             **dict(

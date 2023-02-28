@@ -2,10 +2,10 @@ from dataclasses import dataclass, asdict
 import gym
 from gym import spaces
 import numpy as np
-import torch
 from typing import Dict, Tuple, get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict, Team
+from lux_entry.lux.config import EnvConfig
 
 from lux_entry.lux.state import Player
 
@@ -140,32 +140,37 @@ class ObservationWrapper(gym.ObservationWrapper):
         assert spaces_dict.keys() == get_type_hints(FullObservation).keys()
         self.observation_space = spaces_dict
 
-    def observation(
-        self, env_obs_both_players: Dict[Player, ObservationStateDict]
-    ) -> FullObservation:
-        MAX_FS = self.env_cfg.MAX_FACTORIES
-        MAX_RUBBLE = self.env_cfg.MAX_RUBBLE
-        MAX_LICHEN = self.env_cfg.MAX_LICHEN_PER_TILE
-        LIGHT_CARGO_SPACE = self.env_cfg.ROBOTS["LIGHT"].CARGO_SPACE
-        LIGHT_BAT_CAP = self.env_cfg.ROBOTS["LIGHT"].BATTERY_CAPACITY
-        HEAVY_CARGO_SPACE = self.env_cfg.ROBOTS["HEAVY"].CARGO_SPACE
-        HEAVY_BAT_CAP = self.env_cfg.ROBOTS["HEAVY"].BATTERY_CAPACITY
+    def observation(self, two_player_env_obs: Dict[Player, ObservationStateDict]):
+        return ObservationWrapper.get_custom_obs(two_player_env_obs, self.env.state.env_cfg)
+
+    # we make this method static so the submission/evaluation code can use this as well
+    @staticmethod
+    def get_custom_obs(
+        two_player_env_obs: Dict[Player, ObservationStateDict], env_cfg: EnvConfig
+    ) -> Dict[Player, np.ndarray]:
+        MAX_FS = env_cfg.MAX_FACTORIES
+        MAX_RUBBLE = env_cfg.MAX_RUBBLE
+        MAX_LICHEN = env_cfg.MAX_LICHEN_PER_TILE
+        LIGHT_CARGO_SPACE = env_cfg.ROBOTS["LIGHT"].CARGO_SPACE
+        LIGHT_BAT_CAP = env_cfg.ROBOTS["LIGHT"].BATTERY_CAPACITY
+        HEAVY_CARGO_SPACE = env_cfg.ROBOTS["HEAVY"].CARGO_SPACE
+        HEAVY_BAT_CAP = env_cfg.ROBOTS["HEAVY"].BATTERY_CAPACITY
         EXP_MAX_F_CARGO = 2 * HEAVY_CARGO_SPACE
-        ICE_WATER_RATIO = self.env_cfg.ICE_WATER_RATIO
-        ORE_METAL_RATIO = self.env_cfg.ORE_METAL_RATIO
+        ICE_WATER_RATIO = env_cfg.ICE_WATER_RATIO
+        ORE_METAL_RATIO = env_cfg.ORE_METAL_RATIO
         EXP_MAX_F_WATER = EXP_MAX_F_CARGO / ICE_WATER_RATIO
         EXP_MAX_F_METAL = EXP_MAX_F_CARGO / ORE_METAL_RATIO
         EXP_MAX_TOT_F_CARGO = MAX_FS * EXP_MAX_F_CARGO
         EXP_MAX_TOT_F_WATER = EXP_MAX_TOT_F_CARGO / ICE_WATER_RATIO
         EXP_MAX_TOT_F_METAL = EXP_MAX_TOT_F_CARGO / ORE_METAL_RATIO
-        EXP_MAX_F_POWER = self.env_cfg.FACTORY_CHARGE * 30
+        EXP_MAX_F_POWER = env_cfg.FACTORY_CHARGE * 30
         EXP_MAX_TOT_F_POWER = EXP_MAX_F_POWER * MAX_FS
         EXP_MAX_RS = 50
-        CYCLE_LENGTH = self.env_cfg.CYCLE_LENGTH
-        DAY_LENGTH = self.env_cfg.DAY_LENGTH
-        MAX_EPISODE_LENGTH = self.env_cfg.max_episode_length
+        CYCLE_LENGTH = env_cfg.CYCLE_LENGTH
+        DAY_LENGTH = env_cfg.DAY_LENGTH
+        MAX_EPISODE_LENGTH = env_cfg.max_episode_length
 
-        env_obs = env_obs_both_players[
+        env_obs = two_player_env_obs[
             "player_0"
         ]  # env_obs["player_0"] == env_obs["player_1"]
         obs = dict()
@@ -179,7 +184,7 @@ class ObservationWrapper(gym.ObservationWrapper):
             )
         obs["tile_has_ice"][0] = env_obs["board"]["ice"]
         obs["tile_has_ore"][0] = env_obs["board"]["ore"]
-        for i in range(2 * self.env_cfg.MAX_FACTORIES):
+        for i in range(2 * env_cfg.MAX_FACTORIES):
             obs["tile_has_lichen_strain"][i] = env_obs["board"]["lichen_strains"] == i
         obs["tile_rubble"][0] = env_obs["board"]["rubble"] / MAX_RUBBLE
         lichen_strains = [[], []]
