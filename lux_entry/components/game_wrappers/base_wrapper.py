@@ -9,7 +9,7 @@ from lux_entry.heuristics.bidding import BidActionType
 from lux_entry.heuristics.factory_placement import FactoryPlacementActionType
 from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory
-from lux_entry.components.controllers.type import Controller
+from lux_entry.components.types import Controller
 
 
 class BaseWrapper(gym.Wrapper):

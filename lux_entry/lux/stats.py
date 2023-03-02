@@ -104,10 +104,6 @@ class StatsStateDict(TypedDict):
     pickup: PickUpStatsStateDict
 
 
-## TODO add collision stats
-## TODO add above as a wrapper for jax env?
-
-
 def create_empty_stats() -> StatsStateDict:
     return StatsStateDict(
         action_queue_updates_total=0,

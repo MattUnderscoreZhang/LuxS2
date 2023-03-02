@@ -2,8 +2,10 @@ import torch
 from torch import nn
 from torch.functional import Tensor
 
+from lux_entry.components.types import PolicyNet
 
-class MlpNet(nn.Module):
+
+class MlpNet(PolicyNet):
     def __init__(self, n_observables: int, n_features: int, n_actions: int):
         super().__init__()
         self.n_features = n_features

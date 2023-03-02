@@ -2,8 +2,10 @@ import torch
 from torch import nn
 from torch.functional import Tensor
 
+from lux_entry.components.types import PolicyNet
 
-class DictFeaturesNet(nn.Module):
+
+class DictFeaturesNet(PolicyNet):
     def __init__(self, n_conv_layers: int, n_pass_through_layers: int, n_features: int, n_actions: int):
         super().__init__()
         LAYER_WIDTH = 12

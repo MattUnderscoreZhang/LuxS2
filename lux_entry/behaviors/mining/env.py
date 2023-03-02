@@ -5,7 +5,6 @@ from gym.wrappers.time_limit import TimeLimit
 import numpy as np
 from os import path
 import torch
-from torch import nn
 from torch.functional import Tensor
 from typing import Callable, Dict
 
@@ -16,10 +15,13 @@ from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components import nets, observations, controller, game_wrappers
+from lux_entry.components import nets, observations, game_wrappers
+from lux_entry.components.types import Controller, PolicyNet
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
+
+from .starter_kit_wrapper import StarterKitWrapper
 
 
 bid_policy = bidding.zero_bid
@@ -44,7 +46,7 @@ def make_env(
             controller=EnvController(env.env_cfg),
         )
         env = observation_wrapper.ObservationWrapper(env)
-        env = game_wrappers.StarterKitWrapper(env)
+        env = StarterKitWrapper(env)
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -59,7 +61,7 @@ N_ACTIONS = 5
 
 
 # Net has to take no inputs
-class Net(nets.DictFeatureNet):
+class Net(nets.DictFeaturesNet):
     def __init__(self):
         super().__init__(n_conv_layers=2, n_pass_through_layers=1, n_features=128, n_actions=N_ACTIONS)
 
@@ -106,8 +108,8 @@ def act(
     remainingOverageTime: int,
     player: Player,
     env_cfg: EnvConfig,
-    controller: controller.Controller,
-    net: nn.Module,
+    controller: Controller,
+    net: PolicyNet
 ):
     unit_obs = observation_wrapper.unit_obs_at(env_obs, controller.loc)
     conv_obs, skip_obs = observations.utils.construct_obs(
@@ -150,7 +152,7 @@ def act(
     return controller.action_to_lux_action(player, two_player_env_obs, actions[0])
 
 
-class EnvController(controller.Controller):
+class EnvController(Controller):
     def __init__(self, env_cfg) -> None:
         """
         A simple controller that controls only the robot that will get spawned.

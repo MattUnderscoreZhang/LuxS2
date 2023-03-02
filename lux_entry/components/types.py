@@ -1,6 +1,8 @@
 from gym import spaces
 from luxai_s2.state.state import ObservationStateDict
 import numpy as np
+from torch import nn
+from torch.functional import Tensor
 from typing import Dict
 
 
@@ -15,4 +17,20 @@ class Controller:
 
     def action_masks(self, agent: str, obs: Dict[str, ObservationStateDict]) -> np.ndarray:
         "Generates a boolean action mask indicating in each discrete dimension whether it would be valid or not"
+        raise NotImplementedError()
+
+
+class PolicyNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def extract_features(self, x: Tensor) -> Tensor:
+        raise NotImplementedError()
+
+    def forward(self, x: Tensor) -> Tensor:
+        raise NotImplementedError()
+
+    def act(
+        self, x: Tensor, action_masks: Tensor, deterministic: bool = False
+    ) -> Tensor:
         raise NotImplementedError()

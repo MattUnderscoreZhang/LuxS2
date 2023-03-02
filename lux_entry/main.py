@@ -8,7 +8,7 @@ import zipfile
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.controllers.type import Controller
+from lux_entry.components.types import Controller
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
@@ -27,6 +27,21 @@ class Agent:
         self.net.eval().to(device)
         self.controller: Controller = env.EnvController(self.env_cfg)
 
+    def _load_net_second_method(self, model_class: type[env.Net], model_path: str) -> env.Net:
+        # TODO: this doesn't work yet
+        from stable_baselines3 import PPO
+        net = model_class()
+        ppo = PPO.load(
+            model_path,
+            policy_kwargs={
+                "features_extractor_class": env.CustomFeatureExtractor,
+            }
+        )
+        state_dict = ppo.policy.state_dict()
+        net.load_state_dict(state_dict)
+        net.eval()
+        return net
+
     def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
         # TODO: try replacing function with evaluate() in train.py
         # load .pth or .zip
@@ -40,10 +55,11 @@ class Agent:
                     sb3_state_dict = torch.load(file_content, map_location="cpu")
         else:
             sb3_state_dict = torch.load(model_path, map_location="cpu")
+        # print(sb3_state_dict, file=sys.stderr)
 
         net_keys = []
         for sb3_key in sb3_state_dict.keys():
-            if sb3_key.startswith("pi_features_extractor."):
+            if sb3_key.startswith("features_extractor."):
                 net_keys.append(sb3_key)
                 # TODO: check if f.e. keys are == pi_f.e., vf_f.e., mlp_e.
 
