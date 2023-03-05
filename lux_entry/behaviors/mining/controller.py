@@ -5,13 +5,16 @@ from typing import Dict
 from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.components.types import Controller
+from lux_entry.lux.config import EnvConfig
 
 
 class EnvController(Controller):
-    def __init__(self, env_cfg) -> None:
+    def __init__(self, env_cfg: EnvConfig) -> None:
         """
-        A simple controller that controls only the robot that will get spawned.
-        Moreover, it will always try to spawn one heavy robot if there are none regardless of action given
+        A controller sets the action space, converts actions to Lux actions, and calculates action masks.
+
+        This simple controller controls only a single robot.
+        It will always try to spawn one heavy robot if there are none regardless of action given.
 
         For the robot unit
         - 4 cardinal direction movement (4 dims)
@@ -30,7 +33,6 @@ class EnvController(Controller):
 
         To help understand how to this controller works to map one action space to the original lux action space,
         see how the lux action space is defined in luxai_s2/spaces/action.py
-
         """
         self.env_cfg = env_cfg
         self.move_act_dims = 4

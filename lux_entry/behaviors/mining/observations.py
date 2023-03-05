@@ -2,6 +2,7 @@ from dataclasses import dataclass, asdict
 import gym
 from gym import spaces
 import numpy as np
+import torch
 from typing import Dict, Tuple, get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict, Team
@@ -105,6 +106,21 @@ def unit_obs_at(full_obs: FullObservation, pos: Tuple[int, int]) -> UnitObservat
             )  # max map (48x48 area)
             obs[key][p * 4 + 3] = mean_pool(expanded_map[p], 8)  # max map (96x96 area)
     return UnitObservation(**obs)
+
+
+def construct_obs(conv_obs: list[np.ndarray], skip_obs: list[np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor]:
+    for obs in conv_obs + skip_obs:
+        assert (
+            len(obs.shape) == 4
+            and obs.shape[0] == 1
+            # variable second dimension
+            and obs.shape[2] == 12
+            and obs.shape[3] == 12
+        )
+    return(
+        torch.cat([torch.from_numpy(obs) for obs in conv_obs], dim=1),
+        torch.cat([torch.from_numpy(obs) for obs in skip_obs], dim=1)
+    )
 
 
 class ObservationWrapper(gym.ObservationWrapper):

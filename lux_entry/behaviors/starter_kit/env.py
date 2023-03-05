@@ -10,7 +10,7 @@ from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.game_wrappers import BaseWrapper
+from lux_entry.components.base_wrapper import BaseWrapper
 from lux_entry.components.types import Controller, PolicyNet
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig

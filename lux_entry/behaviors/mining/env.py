@@ -1,31 +1,89 @@
-import argparse
+import copy
 import gym
-from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
-from os import path
+import numpy as np
 import torch
-from torch.functional import Tensor
 from typing import Callable
 
-from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.utils import set_random_seed
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components import nets, observations, game_wrappers
+from lux_entry.components.base_wrapper import BaseWrapper
 from lux_entry.components.types import Controller, PolicyNet
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
+from lux_entry.lux.stats import StatsStateDict
 
-from . import env_wrapper, controller
+from . import controller, observations
+
+
+class EnvWrapper(gym.Wrapper):
+    def __init__(self, env: gym.Env) -> None:
+        """
+        Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training.
+        Only a single player's action is passed to step. Only single-player transitions are returned.
+        """
+        super().__init__(env)
+        self.prev_step_metrics = None
+        self.player = "player_0"
+        self.opp_player = "player_1"
+
+    def step(self, action: np.ndarray):
+        """
+        Update the environment state directly to keep the enemy alive.
+        Set enemy factories to have 1000 water so the game can be treated as single-agent.
+        Send a single-player action and return a single-player transition.
+        We calculate our own reward and info, where info["metrics"] is used with Tensorboard in train.py.
+        """
+        # keep the enemy alive
+        for factory in self.env.state.factories[self.opp_player].values():
+            factory.cargo.water = 1000
+
+        # step
+        dual_action = {
+            self.player: action
+        }  # the second player doesn't get an action
+        obs, _, done, info = self.env.step(dual_action)
+        obs = obs[self.player]
+        done = done[self.player]
+
+        # calculate metrics
+        stats: StatsStateDict = self.env.state.stats[self.player]
+        info = dict()
+        metrics = dict()
+        metrics["ice_dug"] = (
+            stats["generation"]["ice"]["HEAVY"] + stats["generation"]["ice"]["LIGHT"]
+        )
+        metrics["water_produced"] = stats["generation"]["water"]
+        metrics["action_queue_updates_success"] = stats["action_queue_updates_success"]
+        metrics["action_queue_updates_total"] = stats["action_queue_updates_total"]
+        info["metrics"] = metrics
+
+        # calculate reward
+        reward = 0
+        if self.prev_step_metrics is not None:
+            ice_dug_this_step = metrics["ice_dug"] - self.prev_step_metrics["ice_dug"]
+            water_produced_this_step = metrics["water_produced"] - self.prev_step_metrics["water_produced"]
+            reward = ice_dug_this_step / 100 + water_produced_this_step  # water is more important
+        self.prev_step_metrics = copy.deepcopy(metrics)
+
+        return obs, reward, done, info
+
+    def reset(self, **kwargs):
+        """
+        After reset we only return a single-player observation.
+        """
+        obs = self.env.reset(**kwargs)
+        self.prev_step_metrics = None
+        return obs[self.player]
 
 
 bid_policy = bidding.zero_bid
 factory_placement_policy = factory_placement.place_near_random_ice
-ObservationWrapper = observations.custom_observations.ObservationWrapper
+ObservationWrapper = observations.ObservationWrapper
 EnvController = controller.EnvController
 
 
@@ -39,14 +97,14 @@ def make_env(
         The observation and action functions can also be overwritten via wrappers.
         """
         env = gym.make(id="LuxAI_S2-v0", verbose=0, collect_stats=True, MAX_FACTORIES=2)
-        env = game_wrappers.BaseWrapper(
+        env = BaseWrapper(
             env,
             bid_policy=bid_policy,
             factory_placement_policy=factory_placement_policy,
             controller=EnvController(env.env_cfg),
         )
         env = ObservationWrapper(env)
-        env = env_wrapper.EnvWrapper(env)
+        env = EnvWrapper(env)
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -54,60 +112,6 @@ def make_env(
         return env
 
     return _init
-
-
-WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
-N_FEATURES = 128
-N_ACTIONS = 5
-
-
-class Net(nets.DictFeaturesNet):
-    def __init__(self):
-        """
-        This net is used during both training and evaluation.
-        Net creation needs to take no arguments.
-        The net contains both a feature extractor and a fully-connected policy layer.
-        """
-        super().__init__(n_conv_layers=2, n_pass_through_layers=1, n_features=N_FEATURES, n_actions=N_ACTIONS)
-
-
-class CustomFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Box):
-        """
-        This class is only used by the model function below during training.
-        The Net forward function has a fully-connected net after the feature extractor.
-        We call only the feature extractor, and SB3 adds (a) fully-connected layer(s) afterwards.
-        """
-        super().__init__(observation_space, N_FEATURES)
-        self.net = Net()
-
-    def forward(self, conv_obs: Tensor, skip_obs: Tensor) -> Tensor:
-        return self.net.extract_features(conv_obs, skip_obs)
-
-
-def model(env: gym.Env, args: argparse.Namespace):
-    return PPO(
-        "MlpPolicy",
-        env,
-        n_steps=args.rollout_steps // args.n_envs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        policy_kwargs={
-            "features_extractor_class": CustomFeatureExtractor,
-            "features_extractor_kwargs": {
-                "n_observables": 13,
-                "n_features": 128,
-                "n_actions": 12,
-            },
-        },
-        # SB3 adds a fully-connected net after the feature extractor
-        # fully-connected hidden-layer shapes can be manually specified here via the net_arch parameter
-        verbose=1,
-        n_epochs=2,
-        target_kl=args.target_kl,
-        gamma=args.gamma,
-        tensorboard_log=path.join(args.log_path),
-    )
 
 
 def act(
@@ -119,8 +123,13 @@ def act(
     controller: Controller,
     net: PolicyNet
 ):
-    unit_obs = observation_wrapper.unit_obs_at(env_obs, controller.loc)
-    conv_obs, skip_obs = observations.utils.construct_obs(
+    two_player_env_obs = {
+        "player_0": env_obs,
+        "player_1": env_obs,
+    }
+    full_obs = observations.ObservationWrapper.get_custom_obs(two_player_env_obs, env_cfg)
+    unit_obs = observations.unit_obs_at(full_obs[player], controller.loc)
+    conv_obs, skip_obs = observations.construct_obs(
         conv_obs=[
             unit_obs.tile_has_ice,
             unit_obs.tile_per_player_has_factory,
