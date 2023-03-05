@@ -5,7 +5,7 @@ import numpy as np
 from lux_entry.lux.stats import StatsStateDict
 
 
-class StarterKitWrapper(gym.Wrapper):
+class EnvWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env) -> None:
         """
         Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training.

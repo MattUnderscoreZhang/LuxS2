@@ -14,7 +14,7 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
 
 # change this to import a different behavior
-from lux_entry.behaviors.starter_kit import env
+from lux_entry.behaviors.starter_kit import env, net
 
 
 class Agent:
@@ -22,19 +22,19 @@ class Agent:
         self.player: Player = player
         self.env_cfg: EnvConfig = env_cfg
 
-        self.net: env.Net = self._load_net(env.Net, env.WEIGHTS_PATH)
+        self.net: net.Net = self._load_net(net.Net, net.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.eval().to(device)
         self.controller: Controller = env.EnvController(self.env_cfg)
 
-    def _load_net_second_method(self, model_class: type[env.Net], model_path: str) -> env.Net:
+    def _load_net_second_method(self, model_class: type[net.Net], model_path: str) -> net.Net:
         # TODO: this doesn't work yet
         from stable_baselines3 import PPO
         net = model_class()
         ppo = PPO.load(
             model_path,
             policy_kwargs={
-                "features_extractor_class": env.CustomFeatureExtractor,
+                "features_extractor_class": net.CustomFeatureExtractor,
             }
         )
         state_dict = ppo.policy.state_dict()
@@ -42,7 +42,7 @@ class Agent:
         net.eval()
         return net
 
-    def _load_net(self, model_class: type[env.Net], model_path: str) -> env.Net:
+    def _load_net(self, model_class: type[net.Net], model_path: str) -> net.Net:
         # TODO: try replacing function with evaluate() in train.py
         # load .pth or .zip
         if model_path[-4:] == ".zip":
@@ -155,14 +155,6 @@ if __name__ == "__main__":
     while True:
         inputs = read_input()
         obs = json.loads(inputs)
-        # obs dict:
-        #   step: int
-        #   obs: dict
-        #   remainingOverageTime: int
-        #   player: int
-        #   reward: float
-        #   info: dict
-
         observation = Namespace(
             **dict(
                 step=obs["step"],
