@@ -11,6 +11,7 @@ from stable_baselines3.common.utils import set_random_seed
 from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.components.base_wrapper import BaseWrapper
+from lux_entry.components.map_features_obs import get_full_obs_space
 from lux_entry.components.types import Controller, PolicyNet
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
@@ -127,30 +128,8 @@ def act(
         "player_0": env_obs,
         "player_1": env_obs,
     }
-    full_obs = observations.ObservationWrapper.get_custom_obs(two_player_env_obs, env_cfg)
-    unit_obs = observations.unit_obs_at(full_obs[player], controller.loc)
-    conv_obs, skip_obs = observations.construct_obs(
-        conv_obs=[
-            unit_obs.tile_has_ice,
-            unit_obs.tile_per_player_has_factory,
-            unit_obs.tile_per_player_has_robot,
-            unit_obs.tile_per_player_has_light_robot,
-            unit_obs.tile_per_player_has_heavy_robot,
-            unit_obs.tile_rubble,
-            unit_obs.tile_per_player_light_robot_power,
-            unit_obs.tile_per_player_heavy_robot_power,
-            unit_obs.tile_per_player_factory_ice_unbounded,
-            unit_obs.tile_per_player_factory_ore_unbounded,
-            unit_obs.tile_per_player_factory_water_unbounded,
-            unit_obs.tile_per_player_factory_metal_unbounded,
-            unit_obs.tile_per_player_factory_power_unbounded,
-            unit_obs.game_is_day,
-            unit_obs.game_day_or_night_elapsed,
-        ],
-        skip_obs=[
-            unit_obs.tile_has_ice,
-        ],
-    )
+    observation_space = get_full_obs_space(env_cfg)
+    obs = observations.ObservationWrapper.get_obs(two_player_env_obs, env_cfg, observation_space)
 
     with torch.no_grad():
         action_mask = (
