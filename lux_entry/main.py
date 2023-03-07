@@ -55,14 +55,17 @@ class Agent:
                     sb3_state_dict = torch.load(file_content, map_location="cpu")
         else:
             sb3_state_dict = torch.load(model_path, map_location="cpu")
-        # print(sb3_state_dict, file=sys.stderr)
 
-        # net_keys = []
-        # for sb3_key in sb3_state_dict.keys():
-            # if sb3_key.startswith("features_extractor."):
-                # net_keys.append(sb3_key)
-                # # TODO: check if f.e. keys are == pi_f.e., vf_f.e., mlp_e.
-        net_keys = sb3_state_dict.keys()
+        net_keys = [
+            key
+            for key in sb3_state_dict.keys()
+            if key.startswith("features_extractor.net.features_net")
+        ]
+        net_keys += [
+            key
+            for key in sb3_state_dict.keys()
+            if key.startswith("action_net.")
+        ]
 
         net = model_class()
         loaded_state_dict = {}

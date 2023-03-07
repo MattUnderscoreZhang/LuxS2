@@ -75,8 +75,9 @@ def model(env: gym.Env, args: argparse.Namespace):
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         policy_kwargs={
-            # "features_extractor_class": CustomFeatureExtractor,
-            "net_arch": [128, 128],
+            "features_extractor_class": CustomFeatureExtractor,
+            "net_arch": [],
+            # "net_arch": [128, 128],
         },
         verbose=1,
         n_epochs=2,
