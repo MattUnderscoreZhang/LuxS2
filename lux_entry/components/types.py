@@ -24,12 +24,6 @@ class PolicyNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def extract_features(self, x: Tensor) -> Tensor:
-        raise NotImplementedError()
-
-    def forward(self, x: Tensor) -> Tensor:
-        raise NotImplementedError()
-
     def act(
         self, x: Tensor, action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:

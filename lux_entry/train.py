@@ -88,7 +88,7 @@ if __name__ == "__main__":
         "-b", "--behavior", type=str, required=True, help="Behavior to train."
     )
     parser.add_argument(
-        "-t",
+        "-c",
         "--training-conf",
         type=str,
         default="test_conf",

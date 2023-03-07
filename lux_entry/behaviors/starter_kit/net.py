@@ -30,27 +30,19 @@ class Net(PolicyNet):
         super().__init__()
         self.n_features = N_FEATURES
         self.n_actions = N_ACTIONS
-        self.net = nn.Sequential(
+        self.features_net = nn.Sequential(
             nn.Linear(N_OBSERVABLES, 128),
             nn.Tanh(),
             nn.Linear(128, self.n_features),
             nn.Tanh(),
         )
-        self.fc = nn.Linear(self.n_features, self.n_actions)
-
-    def extract_features(self, x: Tensor) -> Tensor:
-        x = self.net(x)
-        return x
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.extract_features(x)
-        x = self.fc(x)
-        return x
+        self.action_net = nn.Linear(self.n_features, self.n_actions)
 
     def act(
         self, x: Tensor, action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:
-        action_logits = self.forward(x)
+        x = self.features_net(x)
+        action_logits = self.action_net(x)
         action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
@@ -67,7 +59,7 @@ class CustomFeatureExtractor(BaseFeaturesExtractor):
         self.net = Net()
 
     def forward(self, obs: Tensor) -> Tensor:
-        return self.net.extract_features(obs)
+        return self.net.features_net(obs)
 
 
 def model(env: gym.Env, args: argparse.Namespace):
@@ -83,7 +75,8 @@ def model(env: gym.Env, args: argparse.Namespace):
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         policy_kwargs={
-            "features_extractor_class": CustomFeatureExtractor,
+            # "features_extractor_class": CustomFeatureExtractor,
+            "net_arch": [128, 128],
         },
         verbose=1,
         n_epochs=2,

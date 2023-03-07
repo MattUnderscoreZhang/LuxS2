@@ -56,16 +56,11 @@ class Net(PolicyNet):
         x = self.tanh_layer_4(x)
         return x
 
-    def forward(self, obs: Dict[str, Tensor]) -> Tensor:
-        x = self.extract_features(obs)
-        x = self.fc_layer_2(x)
-        return x
-
-    # TODO: is this ever called? remove from starter_kit as well if not
     def act(
         self, x: Tensor, action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:
-        action_logits = self.forward(x)
+        x = self.extract_features(x)
+        action_logits = self.fc_layer_2(x)
         action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()

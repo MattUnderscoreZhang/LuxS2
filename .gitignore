@@ -1,3 +1,4 @@
+weights.txt
 logs
 *.pth
 *.tar.gz
