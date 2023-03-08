@@ -79,7 +79,11 @@ def main(args: argparse.Namespace):
     if args.eval:
         evaluate(args, args.model(env, args))
     else:
-        train(args, args.model(env, args))
+        model = args.model(env, args)
+        if args.continue_training:
+            model = model.load(args.model_path)
+            model.set_env(env)
+        train(args, model)
 
 
 if __name__ == "__main__":
@@ -100,6 +104,11 @@ if __name__ == "__main__":
         action="store_true",
         help="If set, will put model in evaluation mode.",
     )
+    parser.add_argument(
+        "--continue_training",
+        action="store_true",
+        help="Continue training from the last best weights",
+    )
     args = parser.parse_args()
 
     with open(
@@ -116,6 +125,7 @@ if __name__ == "__main__":
         Path(__file__).parent / "behaviors" / args.behavior / "logs"
     )
     training_args.eval = args.eval
+    training_args.continue_training = args.continue_training
     training_args.model_path = (
         Path(__file__).parent
         / "behaviors"

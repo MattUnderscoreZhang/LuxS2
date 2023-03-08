@@ -39,9 +39,10 @@ class Net(PolicyNet):
         self.tanh_layer_2 = nn.Tanh()
         self.reduction_layer_2 = nn.Conv2d(30, 5, 1)
         self.tanh_layer_3 = nn.Tanh()
-        self.fc_layer_1 = nn.Linear((5 + N_SKIP_OBS * 4) * 12 * 12, self.n_features)
+        self.fc_layer= nn.Linear((5 + N_SKIP_OBS * 4) * 12 * 12, self.n_features)
         self.tanh_layer_4 = nn.Tanh()
-        self.fc_layer_2 = nn.Linear(self.n_features, self.n_actions)
+        self.action_layer_1 = nn.Linear(self.n_features, 64)
+        self.action_layer_2 = nn.Linear(64, self.n_actions)
 
     def extract_features(self, obs: Dict[str, Tensor]) -> Tensor:
         x = self.reduction_layer_1(obs["conv_obs"])
@@ -52,7 +53,7 @@ class Net(PolicyNet):
         x = self.tanh_layer_3(x)
         x = torch.cat([x, obs["skip_obs"]], dim=1)
         x = x.view(x.size(0), -1)
-        x = self.fc_layer_1(x)
+        x = self.fc_layer(x)
         x = self.tanh_layer_4(x)
         return x
 
@@ -60,7 +61,8 @@ class Net(PolicyNet):
         self, x: Tensor, action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:
         x = self.extract_features(x)
-        action_logits = self.fc_layer_2(x)
+        x = self.action_layer_1(x)
+        action_logits = self.action_layer_2(x)
         action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
@@ -94,6 +96,7 @@ def model(env: gym.Env, args: argparse.Namespace):
         learning_rate=args.learning_rate,
         policy_kwargs={
             "features_extractor_class": CustomFeatureExtractor,
+            "net_arch": [64],
         },
         verbose=1,
         n_epochs=2,
