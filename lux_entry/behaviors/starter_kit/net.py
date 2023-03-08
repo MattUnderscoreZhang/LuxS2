@@ -2,9 +2,11 @@ import argparse
 import gym
 from gym import spaces
 from os import path
+import sys
 import torch
 from torch import nn
 from torch.functional import Tensor
+from typing import Any
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -46,6 +48,23 @@ class Net(PolicyNet):
         action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
+
+    def load_weights(self, state_dict: Any) -> None:
+        net_keys = [
+            key
+            for key in state_dict.keys()
+            if key.startswith("features_extractor.net.features_net")
+        ]
+        net_keys += [
+            key
+            for key in state_dict.keys()
+            if key.startswith("action_net.")
+        ]
+        loaded_state_dict = {}
+        for sb3_key, model_key in zip(net_keys, self.state_dict().keys()):
+            loaded_state_dict[model_key] = state_dict[sb3_key]
+            print("loaded", sb3_key, "->", model_key, file=sys.stderr)
+        self.load_state_dict(loaded_state_dict)
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):

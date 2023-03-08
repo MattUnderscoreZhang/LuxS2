@@ -1,7 +1,6 @@
 from argparse import Namespace
 import io
 import json
-import sys
 import torch
 from typing import Any, Dict, Union
 import zipfile
@@ -14,7 +13,7 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
 
 # change this to import a different behavior
-from lux_entry.behaviors.starter_kit import env, net
+from lux_entry.behaviors.mining import env, net
 
 
 class Agent:
@@ -27,24 +26,7 @@ class Agent:
         self.net.eval().to(device)
         self.controller: Controller = env.EnvController(self.env_cfg)
 
-    def _load_net_second_method(self, model_class: type[net.Net], model_path: str) -> net.Net:
-        # TODO: this doesn't work yet
-        from stable_baselines3 import PPO
-        net = model_class()
-        ppo = PPO.load(
-            model_path,
-            policy_kwargs={
-                "features_extractor_class": net.CustomFeatureExtractor,
-            }
-        )
-        state_dict = ppo.policy.state_dict()
-        net.load_state_dict(state_dict)
-        net.eval()
-        return net
-
     def _load_net(self, model_class: type[net.Net], model_path: str) -> net.Net:
-        # TODO: try replacing function with evaluate() in train.py
-        # load .pth or .zip
         if model_path[-4:] == ".zip":
             with zipfile.ZipFile(model_path) as archive:
                 file_path = "policy.pth"
@@ -56,24 +38,8 @@ class Agent:
         else:
             sb3_state_dict = torch.load(model_path, map_location="cpu")
 
-        net_keys = [
-            key
-            for key in sb3_state_dict.keys()
-            if key.startswith("features_extractor.net.features_net")
-        ]
-        net_keys += [
-            key
-            for key in sb3_state_dict.keys()
-            if key.startswith("action_net.")
-        ]
-
         net = model_class()
-        loaded_state_dict = {}
-        for sb3_key, model_key in zip(net_keys, net.state_dict().keys()):
-            loaded_state_dict[model_key] = sb3_state_dict[sb3_key]
-            print("loaded", sb3_key, "->", model_key, file=sys.stderr)
-
-        net.load_state_dict(loaded_state_dict)
+        net.load_weights(sb3_state_dict)
         return net
 
     def bid_policy(

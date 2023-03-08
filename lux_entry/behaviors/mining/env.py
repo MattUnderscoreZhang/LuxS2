@@ -139,9 +139,13 @@ def act(
             .unsqueeze(0)  # we unsqueeze/add an extra batch dimension =
             .bool()
         )
-        obs_arr = torch.from_numpy(obs[player]).float()
+        observation = obs[player]
+        observation = {
+            key: value.float().unsqueeze(0)  # adding batch dimension
+            for key, value in observation.items()
+        }
         actions = (
-            net.act(obs_arr.unsqueeze(0), deterministic=False, action_masks=action_mask)
+            net.act(observation, deterministic=False, action_masks=action_mask)
             .cpu()
             .numpy()
         )

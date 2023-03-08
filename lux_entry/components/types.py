@@ -3,7 +3,7 @@ from luxai_s2.state.state import ObservationStateDict
 import numpy as np
 from torch import nn
 from torch.functional import Tensor
-from typing import Dict
+from typing import Dict, Any
 
 
 class Controller:
@@ -27,4 +27,7 @@ class PolicyNet(nn.Module):
     def act(
         self, x: Tensor, action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:
+        raise NotImplementedError()
+
+    def load_weights(self, state_dict: Any) -> None:
         raise NotImplementedError()

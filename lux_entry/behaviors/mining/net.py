@@ -2,10 +2,11 @@ import argparse
 import gym
 from gym import spaces
 from os import path
+import sys
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Dict
+from typing import Dict, Any
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -58,14 +59,44 @@ class Net(PolicyNet):
         return x
 
     def act(
-        self, x: Tensor, action_masks: Tensor, deterministic: bool = False
+        self, x: Dict[str, Tensor], action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:
-        x = self.extract_features(x)
-        x = self.action_layer_1(x)
+        features = self.extract_features(x)
+        x = self.action_layer_1(features)
+        x = nn.Tanh()(x)
         action_logits = self.action_layer_2(x)
         action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
+
+    def load_weights(self, state_dict: Any) -> None:
+        net_keys = [
+            layer_name
+            for layer in [
+                "reduction_layer_1",
+                "conv_layer_1",
+                "conv_layer_2",
+                "reduction_layer_2",
+                "fc_layer",
+            ]
+            for layer_name in [
+                f"features_extractor.net.{layer}.weight",
+                f"features_extractor.net.{layer}.bias",
+            ]
+        ] + [
+            layer_name
+            for layer_name in state_dict.keys()
+            if layer_name.startswith("mlp_extractor.")
+        ] + [
+            layer_name
+            for layer_name in state_dict.keys()
+            if layer_name.startswith("action_net.")
+        ]
+        loaded_state_dict = {}
+        for sb3_key, model_key in zip(net_keys, self.state_dict().keys()):
+            loaded_state_dict[model_key] = state_dict[sb3_key]
+            print("loaded", sb3_key, "->", model_key, file=sys.stderr)
+        self.load_state_dict(loaded_state_dict)
 
 
 class CustomFeatureExtractor(BaseFeaturesExtractor):
