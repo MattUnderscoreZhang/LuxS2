@@ -6,7 +6,6 @@ from typing import Dict, get_type_hints
 from luxai_s2.state.state import ObservationStateDict, Team
 
 from lux_entry.lux.config import EnvConfig
-from lux_entry.lux.state import Player
 
 
 @dataclass
@@ -95,9 +94,9 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
     return spaces_dict
 
 
-def get_full_two_player_obs(
-    two_player_env_obs: Dict[Player, ObservationStateDict], env_cfg: EnvConfig, observation_space: spaces.Dict,
-) -> Dict[Player, MapFeaturesObservation]:
+def get_full_obs(
+    env_obs: ObservationStateDict, env_cfg: EnvConfig, observation_space: spaces.Dict,
+) -> MapFeaturesObservation:
     # normalization factors
     MAX_FS = env_cfg.MAX_FACTORIES
     MAX_RUBBLE = env_cfg.MAX_RUBBLE
@@ -122,18 +121,15 @@ def get_full_two_player_obs(
     MAX_EPISODE_LENGTH = env_cfg.max_episode_length
 
     # init keys in observation as array of zeros of the right size
-    obs = dict()
-    for key, value in observation_space.items():
-        if key in ["teams", "factories_per_team"]:
-            continue
-        obs[key] = (
-            np.zeros(value.shape)
-            if type(value) == spaces.MultiBinary
-            else np.zeros(value.shape) + value.low[0]
-        )
+    obs = {
+        key: np.zeros(value.shape)
+        if type(value) == spaces.MultiBinary
+        else np.zeros(value.shape) + value.low[0]
+        for key, value in observation_space.items()
+        if key not in ["teams", "factories_per_team"]
+    }
 
     # fill in observations
-    env_obs = two_player_env_obs["player_0"]  # identical obs for players
     obs["tile_has_ice"][0] = env_obs["board"]["ice"]
     obs["tile_has_ore"][0] = env_obs["board"]["ore"]
     for i in range(2 * env_cfg.MAX_FACTORIES):
@@ -191,14 +187,18 @@ def get_full_two_player_obs(
     obs["factories_per_team"] = env_obs["board"]["factories_per_team"]
     obs["valid_spawns_mask"][0] = env_obs["board"]["valid_spawns_mask"]
 
-    # make sure each player has their values first, then their opponent's values
-    two_player_obs = {}
-    two_player_obs["player_0"] = MapFeaturesObservation(**obs)
-    for key, value in obs.items():
-        if key in ["teams", "factories_per_team"]:
-            continue
-        if value.shape[0] == 2:
-            obs[key][[0, 1]] = obs[key][[1, 0]]
-    two_player_obs["player_1"] = MapFeaturesObservation(**obs)
+    return MapFeaturesObservation(**obs)
 
-    return two_player_obs
+
+def _get_full_obs(
+    env_obs: ObservationStateDict, env_cfg: EnvConfig, observation_space: spaces.Dict,
+) -> MapFeaturesObservation:
+    # calculate fps for _get_obs
+    import time, sys
+    start = time.time()
+    n_trials = 1000
+    for _ in range(n_trials):
+        obs = _get_full_obs(env_obs, env_cfg, observation_space)
+    end = time.time()
+    print("fps:", n_trials / (end - start), file=sys.stderr)
+    return obs

@@ -6,8 +6,8 @@ from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.map_features_obs import MapFeaturesObservation, get_full_obs_space, get_full_two_player_obs
-from lux_entry.lux.state import Player, EnvConfig
+from lux_entry.components.map_features_obs import MapFeaturesObservation, get_full_obs_space, get_full_obs
+from lux_entry.lux.state import EnvConfig
 
 
 class ObservationWrapper(gym.ObservationWrapper):
@@ -19,8 +19,8 @@ class ObservationWrapper(gym.ObservationWrapper):
             "skip_obs":spaces.Box(-999, 999, shape=(4, 12, 12)),
         })
 
-    def observation(self, two_player_env_obs: Dict[Player, ObservationStateDict]) -> Dict[Player, Dict[str, torch.Tensor]]:
-        return ObservationWrapper.get_obs(two_player_env_obs, self.env_cfg, get_full_obs_space(self.env_cfg))
+    def observation(self, obs: ObservationStateDict) -> Dict[str, torch.Tensor]:
+        return ObservationWrapper.get_obs(obs, self.env_cfg, get_full_obs_space(self.env_cfg))
 
     @staticmethod
     def _concat_obs(conv_obs: list[np.ndarray], skip_obs: list[np.ndarray]) -> Dict[str, torch.Tensor]:
@@ -95,34 +95,27 @@ class ObservationWrapper(gym.ObservationWrapper):
 
     @staticmethod
     def get_obs(
-        two_player_env_obs: Dict[Player, ObservationStateDict],
+        obs: ObservationStateDict,
         env_cfg: EnvConfig,
         observation_space: spaces.Dict
-    ) -> Dict[Player, Dict[str, torch.Tensor]]:
+    ) -> Dict[str, torch.Tensor]:
         """
-        Get minimaps for both players.
+        Get minimaps.
         """
-        # extract info for both players
-        two_player_full_obs = get_full_two_player_obs(two_player_env_obs, env_cfg, observation_space)
-        assert two_player_full_obs["player_0"].tile_has_ice.shape == (1, 48, 48)
+        full_obs = get_full_obs(obs, env_cfg, observation_space)
+        assert full_obs.tile_has_ice.shape == (1, 48, 48)
 
-        env_obs = two_player_env_obs["player_0"]  # identical obs for players
-        two_player_first_unit_obs = {
-            "player_0": {
-                "conv_obs": torch.zeros((104, 12, 12)),
-                "skip_obs": torch.zeros((4, 12, 12)),
-            },
-            "player_1": {
-                "conv_obs": torch.zeros((104, 12, 12)),
-                "skip_obs": torch.zeros((4, 12, 12)),
-            },
+        first_unit_obs = {
+            "conv_obs": torch.zeros((104, 12, 12)),
+            "skip_obs": torch.zeros((4, 12, 12)),
         }
+        units = obs["units"]
         for player in ["player_0", "player_1"]:
-            units = env_obs["units"][player]
+            units = obs["units"][player]
             for unit_info in units.values():
-                two_player_first_unit_obs[player] = ObservationWrapper._get_minimaps(
-                    two_player_full_obs[player], unit_info["pos"][0], unit_info["pos"][1]
+                first_unit_obs = ObservationWrapper._get_minimaps(
+                    full_obs, unit_info["pos"][0], unit_info["pos"][1]
                 )
                 break  # get just first unit
 
-        return two_player_first_unit_obs
+        return first_unit_obs

@@ -12,6 +12,7 @@ from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.components.base_wrapper import BaseWrapper
 from lux_entry.components.map_features_obs import get_full_obs_space
+from lux_entry.components.solitaire_wrapper import SolitaireWrapper
 from lux_entry.components.types import Controller, PolicyNet
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
@@ -45,12 +46,7 @@ class EnvWrapper(gym.Wrapper):
             factory.cargo.water = 1000
 
         # step
-        dual_action = {
-            self.player: action
-        }  # the second player doesn't get an action
-        obs, _, done, info = self.env.step(dual_action)
-        obs = obs[self.player]
-        done = done[self.player]
+        obs, _, done, info = self.env.step(action)
 
         # calculate metrics
         stats: StatsStateDict = self.env.state.stats[self.player]
@@ -79,7 +75,7 @@ class EnvWrapper(gym.Wrapper):
         """
         obs = self.env.reset(**kwargs)
         self.prev_step_metrics = None
-        return obs[self.player]
+        return obs
 
 
 bid_policy = bidding.zero_bid
@@ -104,6 +100,7 @@ def make_env(
             factory_placement_policy=factory_placement_policy,
             controller=EnvController(env.env_cfg),
         )
+        env = SolitaireWrapper(env, "player_0")
         env = ObservationWrapper(env)
         env = EnvWrapper(env)
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
