@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from typing import Any, Dict, Union
 
 from luxai_s2.state.state import ObservationStateDict
@@ -157,3 +158,19 @@ def obs_to_game_state(step, env_cfg: EnvConfig, obs: Dict) -> GameState:
         factories=factories,
         teams=teams,
     )
+
+
+def add_batch_dimension(x: Any) -> Any:
+    """
+    This is used for single-episode agent evaluation.
+    The input Tensor or Tensor dict is converted to numpy format.
+    An extra batch dimension is added to the numpy array.
+    """
+    if type(x) == dict:
+        x = {
+            key: value.float().unsqueeze(0)  # adding batch dimension
+            for key, value in x.items()
+        }
+    else:
+        x = torch.from_numpy(x).float().unsqueeze(0)
+    return x

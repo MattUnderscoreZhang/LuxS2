@@ -105,9 +105,9 @@ if __name__ == "__main__":
         help="If set, will put model in evaluation mode.",
     )
     parser.add_argument(
-        "--continue_training",
+        "--new_training",
         action="store_true",
-        help="Continue training from the last best weights",
+        help="Start training anew, ignoring the best existing weights",
     )
     args = parser.parse_args()
 
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         Path(__file__).parent / "behaviors" / args.behavior / "logs"
     )
     training_args.eval = args.eval
-    training_args.continue_training = args.continue_training
+    training_args.continue_training = not args.new_training
     training_args.model_path = (
         Path(__file__).parent
         / "behaviors"

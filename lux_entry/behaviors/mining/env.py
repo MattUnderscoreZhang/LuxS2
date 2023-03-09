@@ -17,6 +17,7 @@ from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
+from lux_entry.lux.utils import add_batch_dimension
 
 from . import controller, observations
 
@@ -131,18 +132,10 @@ def act(
     obs = observations.ObservationWrapper.get_obs(two_player_env_obs, env_cfg, observation_space)
 
     with torch.no_grad():
-        action_mask = (
-            torch.from_numpy(
-                controller.action_masks(agent=player, obs=two_player_env_obs)
-            )
-            .unsqueeze(0)  # we unsqueeze/add an extra batch dimension =
-            .bool()
-        )
-        observation = obs[player]
-        observation = {
-            key: value.float().unsqueeze(0)  # adding batch dimension
-            for key, value in observation.items()
-        }
+        action_mask = add_batch_dimension(
+            controller.action_masks(agent=player, obs=two_player_env_obs)
+        ).bool()
+        observation = add_batch_dimension(obs[player])
         actions = (
             net.act(observation, deterministic=False, action_masks=action_mask)
             .cpu()

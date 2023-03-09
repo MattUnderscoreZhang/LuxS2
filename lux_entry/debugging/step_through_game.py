@@ -37,7 +37,7 @@ def step_through_game(args: argparse.Namespace) -> None:
         # plt.imshow(obs["skip_obs"][3])
         # # plt.show()
 
-        print(reward)
+        print(action, reward)
         i += 1
 
 
