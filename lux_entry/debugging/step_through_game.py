@@ -1,43 +1,66 @@
 import argparse
 import importlib
+import io
 import matplotlib.pyplot as plt
 from pathlib import Path
+import torch
 import yaml
+import zipfile
 
-from lux_entry.main import Agent
+from lux_entry.components.types import PolicyNet
+from lux_entry.lux.utils import add_batch_dimension
+
+
+def load_net(model_class: PolicyNet, model_path: str) -> PolicyNet:
+    if model_path[-4:] == ".zip":
+        with zipfile.ZipFile(model_path) as archive:
+            file_path = "policy.pth"
+            with archive.open(file_path, mode="r") as param_file:
+                file_content = io.BytesIO()
+                file_content.write(param_file.read())
+                file_content.seek(0)
+                sb3_state_dict = torch.load(file_content, map_location="cpu")
+    else:
+        sb3_state_dict = torch.load(model_path, map_location="cpu")
+
+    net = model_class()
+    net.load_weights(sb3_state_dict)
+    return net
 
 
 def step_through_game(args: argparse.Namespace) -> None:
-    player = "player_0"
     env = args.env.make_env(0)()
-    agent = Agent(player, env.state.env_cfg)
+    net: args.net.Net = load_net(args.net.Net, args.net.WEIGHTS_PATH)
 
     obs = env.reset()
     done = False
     i = 0
+    total_reward = 0
     while not done:
-        obs = {
-            key: value.float().unsqueeze(0)  # adding batch dimension
-            for key, value in obs.items()
-        }
-        action = agent.net.act(obs, deterministic=False)
+        obs = add_batch_dimension(obs)
+        action = net.act(obs, deterministic=False)
         action = action.cpu().numpy()[0]
         obs, reward, done, info = env.step(action)
+        total_reward += reward
 
-        # plt.figure()
-        # plt.title(f"Step {i}")
-        # plt.axis("off")
-        # plt.subplot(2, 2, 1)
-        # plt.imshow(obs["skip_obs"][0])
-        # plt.subplot(2, 2, 2)
-        # plt.imshow(obs["skip_obs"][1])
-        # plt.subplot(2, 2, 3)
-        # plt.imshow(obs["skip_obs"][2])
-        # plt.subplot(2, 2, 4)
-        # plt.imshow(obs["skip_obs"][3])
-        # # plt.show()
+        # give title to entire figure
+        plt.figure()
+        plt.suptitle(f"Step {i}, Reward: {total_reward}, Action: {action}")
+        plt.axis("off")
+        plt.subplot(2, 2, 1)
+        plt.imshow(obs["skip_obs"][0])
+        plt.clim(-1, 1)
+        plt.subplot(2, 2, 2)
+        plt.imshow(obs["skip_obs"][1])
+        plt.clim(-1, 1)
+        plt.subplot(2, 2, 3)
+        plt.imshow(obs["skip_obs"][2])
+        plt.clim(-1, 1)
+        plt.subplot(2, 2, 4)
+        plt.imshow(obs["skip_obs"][3])
+        plt.clim(-1, 1)
+        plt.show()
 
-        print(action, reward)
         i += 1
 
 

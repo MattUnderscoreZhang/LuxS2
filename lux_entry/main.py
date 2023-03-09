@@ -13,7 +13,7 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
 
 # change this to import a different behavior
-from lux_entry.behaviors.starter_kit import env, net
+from lux_entry.behaviors.mining import env, net
 
 
 class Agent:
