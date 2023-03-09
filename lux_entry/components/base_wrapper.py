@@ -49,18 +49,18 @@ class BaseWrapper(gym.Wrapper):
         If the input only contains an action for one player, the other gets an empty dict.
         The actions is fed to LuxAI_S2, which returns a transition for both players.
         """
-        # here, for each agent in the game we translate their action into a Lux S2 action
+        # here, for each player in the game we translate their action into a Lux S2 action
         lux_action = dict()
-        for agent in self.env.agents:
-            if agent in player_actions:
+        for player in self.env.agents:
+            if player in player_actions:
                 assert self.prev_obs is not None
-                lux_action[agent] = self.controller.action_to_lux_action(
-                    agent=agent, obs=self.prev_obs, action=player_actions[agent]
+                lux_action[player] = self.controller.action_to_lux_action(
+                    player=player, obs=self.prev_obs[player], action=player_actions[player]
                 )
             else:
-                lux_action[agent] = dict()
+                lux_action[player] = dict()
 
-        # lux_action is now a dict mapping agent name to an action, which is passed to LuxAI_S2
+        # lux_action is now a dict mapping player name to an action, which is passed to LuxAI_S2
         obs, reward, done, info = self.env.step(lux_action)
         self.prev_obs = obs
         return obs, reward, done, info

@@ -137,7 +137,7 @@ def act(
 
     with torch.no_grad():
         action_mask = add_batch_dimension(
-            controller.action_masks(agent=player, obs=two_player_env_obs)
+            controller.action_masks(player=player, obs=env_obs)
         ).bool()
         observation = add_batch_dimension(obs[player])
         actions = (
@@ -145,4 +145,4 @@ def act(
             .cpu()
             .numpy()
         )
-    return controller.action_to_lux_action(player, two_player_env_obs, actions[0])
+    return controller.action_to_lux_action(player, env_obs, actions[0])

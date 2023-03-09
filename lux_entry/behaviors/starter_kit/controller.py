@@ -6,6 +6,7 @@ from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.components.types import Controller
 from lux_entry.lux.config import EnvConfig
+from lux_entry.lux.state import Player
 
 
 class EnvController(Controller):
@@ -79,10 +80,9 @@ class EnvController(Controller):
     def _get_dig_action(self, id: np.int64) -> np.ndarray:
         return np.array([3, 0, 0, 0, 0, 1])
 
-    def action_to_lux_action(self, agent: str, obs: Dict[str, ObservationStateDict], action: np.int64) -> Dict[str, int]:
-        shared_obs = obs["player_0"]
+    def action_to_lux_action(self, player: Player, obs: ObservationStateDict, action: np.int64) -> Dict[str, int]:
         lux_action = dict()
-        units = shared_obs["units"][agent]
+        units = obs["units"][player]
         for unit_id in units.keys():
             unit = units[unit_id]
             choice = action
@@ -100,8 +100,8 @@ class EnvController(Controller):
                 # action is a no_op, so we don't update the action queue
                 no_op = True
 
-            # simple trick to help agents conserve power is to avoid updating the action queue
-            # if the agent was previously trying to do that particular action already
+            # simple trick to help units conserve power is to avoid updating the action queue
+            # if the unit was previously trying to do that particular action already
             if len(unit["action_queue"]) > 0 and len(action_queue) > 0:
                 same_actions = (unit["action_queue"][0] == action_queue[0]).all()
                 if same_actions:
@@ -111,7 +111,7 @@ class EnvController(Controller):
 
             break
 
-        factories = shared_obs["factories"][agent]
+        factories = obs["factories"][player]
         if len(units) == 0:
             for unit_id in factories.keys():
                 lux_action[unit_id] = 1  # build a single heavy
@@ -119,7 +119,7 @@ class EnvController(Controller):
         return lux_action
 
     # TODO: factor this out if it's not being used during training
-    def action_masks(self, agent: str, obs: Dict[str, ObservationStateDict]) -> np.ndarray:
+    def action_masks(self, player: Player, obs: ObservationStateDict) -> np.ndarray:
         """
         Defines a simplified action mask for this controller's action space.
         Doesn't account for whether robot has enough power.
@@ -127,22 +127,21 @@ class EnvController(Controller):
         """
         # compute a factory occupancy map that will be useful for checking if a board tile
         # has a factory and which team's factory it is.
-        shared_obs = obs[agent]
         factory_occupancy_map = (
-            np.ones_like(shared_obs["board"]["rubble"], dtype=int) * -1
+            np.ones_like(obs["board"]["rubble"], dtype=int) * -1
         )
         factories = dict()
-        for player in shared_obs["factories"]:
+        for player in obs["factories"]:
             factories[player] = dict()
-            for unit_id in shared_obs["factories"][player]:
-                f_data = shared_obs["factories"][player][unit_id]
+            for unit_id in obs["factories"][player]:
+                f_data = obs["factories"][player][unit_id]
                 f_pos = f_data["pos"]
                 # store in a 3x3 space around the factory position it's strain id.
                 factory_occupancy_map[
                     f_pos[0] - 1 : f_pos[0] + 2, f_pos[1] - 1 : f_pos[1] + 2
                 ] = f_data["strain_id"]
 
-        units = shared_obs["units"][agent]
+        units = obs["units"][player]
         action_mask = np.zeros((self.total_act_dims), dtype=bool)
         for unit_id in units.keys():
             action_mask = np.zeros(self.total_act_dims)
@@ -167,22 +166,22 @@ class EnvController(Controller):
                 ):
                     continue
                 factory_there = factory_occupancy_map[transfer_pos[0], transfer_pos[1]]
-                if factory_there in shared_obs["teams"][agent]["factory_strains"]:
+                if factory_there in obs["teams"][player]["factory_strains"]:
                     action_mask[
                         self.transfer_dim_high - self.transfer_act_dims + i
                     ] = True
 
             factory_there = factory_occupancy_map[pos[0], pos[1]]
             on_top_of_factory = (
-                factory_there in shared_obs["teams"][agent]["factory_strains"]
+                factory_there in obs["teams"][player]["factory_strains"]
             )
 
             # dig is valid only if on top of tile with rubble or resources or lichen
             board_sum = (
-                shared_obs["board"]["ice"][pos[0], pos[1]]
-                + shared_obs["board"]["ore"][pos[0], pos[1]]
-                + shared_obs["board"]["rubble"][pos[0], pos[1]]
-                + shared_obs["board"]["lichen"][pos[0], pos[1]]
+                obs["board"]["ice"][pos[0], pos[1]]
+                + obs["board"]["ore"][pos[0], pos[1]]
+                + obs["board"]["rubble"][pos[0], pos[1]]
+                + obs["board"]["lichen"][pos[0], pos[1]]
             )
             if board_sum > 0 and not on_top_of_factory:
                 action_mask[

@@ -121,21 +121,17 @@ def act(
     controller: Controller,
     net: PolicyNet
 ):
-    two_player_env_obs = {
-        "player_0": env_obs,
-        "player_1": env_obs,
-    }
     observation_space = get_full_obs_space(env_cfg)
-    obs = observations.ObservationWrapper.get_obs(two_player_env_obs, env_cfg, observation_space)
+    obs = observations.ObservationWrapper.get_obs(env_obs, env_cfg, observation_space)
 
     with torch.no_grad():
         action_mask = add_batch_dimension(
-            controller.action_masks(agent=player, obs=two_player_env_obs)
+            controller.action_masks(player=player, obs=env_obs)
         ).bool()
-        observation = add_batch_dimension(obs[player])
+        observation = add_batch_dimension(obs)
         actions = (
             net.act(observation, deterministic=False, action_masks=action_mask)
             .cpu()
             .numpy()
         )
-    return controller.action_to_lux_action(player, two_player_env_obs, actions[0])
+    return controller.action_to_lux_action(player, env_obs, actions[0])
