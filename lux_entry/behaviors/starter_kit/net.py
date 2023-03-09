@@ -40,7 +40,7 @@ class Net(PolicyNet):
         )
         self.action_net = nn.Linear(self.n_features, self.n_actions)
 
-    def act(
+    def evaluate(
         self,
         x: Tensor,
         action_masks: Optional[Tensor] = None,

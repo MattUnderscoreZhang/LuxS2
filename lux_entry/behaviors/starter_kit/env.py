@@ -21,7 +21,7 @@ from lux_entry.lux.utils import add_batch_dimension
 from . import controller, observations
 
 
-class EnvWrapper(gym.Wrapper):
+class TrainingWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env) -> None:
         """
         Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training.
@@ -104,7 +104,7 @@ def make_env(
             controller=EnvController(env.env_cfg),
         )
         env = ObservationWrapper(env)
-        env = EnvWrapper(env)
+        env = TrainingWrapper(env)
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -114,7 +114,7 @@ def make_env(
     return _init
 
 
-def act(
+def evaluate(
     step: int,
     env_obs: ObservationStateDict,
     remainingOverageTime: int,
@@ -141,7 +141,7 @@ def act(
         ).bool()
         observation = add_batch_dimension(obs[player])
         actions = (
-            net.act(observation, deterministic=False, action_masks=action_mask)
+            net.evaluate(observation, deterministic=False, action_masks=action_mask)
             .cpu()
             .numpy()
         )

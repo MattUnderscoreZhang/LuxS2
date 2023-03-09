@@ -38,7 +38,7 @@ def step_through_game(args: argparse.Namespace) -> None:
     total_reward = 0
     while not done:
         obs = add_batch_dimension(obs)
-        action = net.act(obs, deterministic=False)
+        action = net.evaluate(obs, deterministic=False)
         action = action.cpu().numpy()[0]
         obs, reward, done, info = env.step(action)
         total_reward += reward

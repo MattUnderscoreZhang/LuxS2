@@ -62,7 +62,7 @@ class Agent:
     def act(
         self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60
     ):
-        return env.act(
+        return env.evaluate(
             step=step,
             env_obs=env_obs,
             remainingOverageTime=remainingOverageTime,

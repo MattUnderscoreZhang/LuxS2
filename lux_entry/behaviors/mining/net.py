@@ -58,7 +58,7 @@ class Net(PolicyNet):
         x = self.tanh_layer_4(x)
         return x
 
-    def act(
+    def evaluate(
         self,
         x: Dict[str, Tensor],
         action_masks: Optional[Tensor] = None,

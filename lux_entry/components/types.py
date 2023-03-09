@@ -26,7 +26,7 @@ class PolicyNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def act(
+    def evaluate(
         self, x: Tensor, action_masks: Tensor, deterministic: bool = False
     ) -> Tensor:
         raise NotImplementedError()
