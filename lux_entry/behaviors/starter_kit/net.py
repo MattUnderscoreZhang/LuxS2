@@ -6,7 +6,7 @@ import sys
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Any
+from typing import Any, Optional
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -41,11 +41,15 @@ class Net(PolicyNet):
         self.action_net = nn.Linear(self.n_features, self.n_actions)
 
     def act(
-        self, x: Tensor, action_masks: Tensor, deterministic: bool = False
+        self,
+        x: Tensor,
+        action_masks: Optional[Tensor] = None,
+        deterministic: bool = False
     ) -> Tensor:
         x = self.features_net(x)
         action_logits = self.action_net(x)
-        action_logits[~action_masks] = -1e8  # mask out invalid actions
+        if action_masks is not None:
+            action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
 

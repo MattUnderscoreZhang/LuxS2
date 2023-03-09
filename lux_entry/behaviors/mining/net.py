@@ -6,7 +6,7 @@ import sys
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -59,13 +59,17 @@ class Net(PolicyNet):
         return x
 
     def act(
-        self, x: Dict[str, Tensor], action_masks: Tensor, deterministic: bool = False
+        self,
+        x: Dict[str, Tensor],
+        action_masks: Optional[Tensor] = None,
+        deterministic: bool = False
     ) -> Tensor:
         features = self.extract_features(x)
         x = self.action_layer_1(features)
         x = nn.Tanh()(x)
         action_logits = self.action_layer_2(x)
-        action_logits[~action_masks] = -1e8  # mask out invalid actions
+        if action_masks is not None:
+            action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
 

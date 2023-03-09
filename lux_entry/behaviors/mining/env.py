@@ -53,7 +53,6 @@ class EnvWrapper(gym.Wrapper):
 
         # calculate metrics
         stats: StatsStateDict = self.env.state.stats[self.player]
-        info = dict()
         metrics = dict()
         metrics["ice_dug"] = (
             stats["generation"]["ice"]["HEAVY"] + stats["generation"]["ice"]["LIGHT"]
