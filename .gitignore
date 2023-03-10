@@ -8,3 +8,5 @@ luxai_s2
 *.html
 *.ipynb_checkpoints
 __pycache__
+*.svg
+.DS_Store

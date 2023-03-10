@@ -193,7 +193,7 @@ def get_full_obs(
 def _get_full_obs(
     env_obs: ObservationStateDict, env_cfg: EnvConfig, observation_space: spaces.Dict,
 ) -> MapFeaturesObservation:
-    # calculate fps for _get_obs
+    "For timing purposes."
     import time, sys
     start = time.time()
     n_trials = 1000

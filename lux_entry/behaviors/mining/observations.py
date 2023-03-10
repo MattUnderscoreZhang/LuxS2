@@ -109,7 +109,6 @@ class ObservationWrapper(gym.ObservationWrapper):
             "conv_obs": torch.zeros((104, 12, 12)),
             "skip_obs": torch.zeros((4, 12, 12)),
         }
-        units = obs["units"]
         for player in ["player_0", "player_1"]:
             units = obs["units"][player]
             for unit_info in units.values():
