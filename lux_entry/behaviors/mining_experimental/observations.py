@@ -1,5 +1,6 @@
 import gym
 from gym import spaces
+import numpy as np
 import torch
 from torch import Tensor
 from typing import Dict
@@ -22,33 +23,6 @@ class ObservationWrapper(gym.ObservationWrapper):
 
     def observation(self, obs: ObservationStateDict) -> Dict[str, Tensor]:
         return ObservationWrapper.get_obs(obs, self.env_cfg, get_full_obs_space(self.env_cfg))
-
-    @staticmethod
-    def _concat_obs(conv_obs: list[Tensor], skip_obs: list[Tensor]) -> Dict[str, Tensor]:
-        """
-        Concat observables together into arrays.
-        """
-        for obs in conv_obs + skip_obs:
-            assert (
-                len(obs.shape) == 3
-                # variable second dimension
-                and obs.shape[1] == 12
-                and obs.shape[2] == 12
-            )
-        return {
-            "conv_obs": torch.cat([obs for obs in conv_obs], dim=0),
-            "skip_obs": torch.cat([obs for obs in skip_obs], dim=0),
-        }
-
-    # the old version, which is 70% slower than the new version
-    """
-    @staticmethod
-    def _mean_pool(arr: np.ndarray, window: int) -> np.ndarray:
-        arr = arr.reshape(
-            arr.shape[0] // window, window, arr.shape[1] // window, window
-        )
-        return np.mean(arr, axis=(1, 3))
-    """
 
     @staticmethod
     def _mean_pool(arr: Tensor, window: int) -> Tensor:
@@ -79,60 +53,34 @@ class ObservationWrapper(gym.ObservationWrapper):
         ]
 
         # create minimaps centered around x, y
-        conv_minimaps = []
-        skip_minimaps = []
-        for value, skip in minimap_obs:
-            expanded_map = torch.full((value.shape[0], 96, 96), -1.0)
-            minimap = torch.zeros((value.shape[0] * 4, 12, 12))
-            for p in range(value.shape[0]):
-                # unit is in lower right pixel of upper left quadrant
-                expanded_map[p][x : x + 48, y : y + 48] = Tensor(value[p])
-                # small map (12x12 area)
-                minimap[p * 4] = expanded_map[p][42:54, 42:54]
-                # medium map (24x24 area)
-                minimap[p * 4 + 1] = ObservationWrapper._mean_pool(expanded_map[p][36:60, 36:60], 2)
-                # large map (48x48 area)
-                minimap[p * 4 + 2] = ObservationWrapper._mean_pool(expanded_map[p][24:72, 24:72], 4)
-                # full map (96x96 area)
-                minimap[p * 4 + 3] = ObservationWrapper._mean_pool(expanded_map[p], 8)
-            conv_minimaps.append(minimap)
-            if skip:
-                skip_minimaps.append(minimap)
-
-        # 20% faster minimaps, but out of order
-        """
-        @staticmethod
-        def _mean_pool_2(arr: np.ndarray, window: int) -> np.ndarray:
-            arr = arr.reshape(
-                arr.shape[0], arr.shape[1] // window, window, arr.shape[2] // window, window
-            )
-            return np.mean(arr, axis=(2, 4))
-
-        return np.mean(arr, axis=(1, 3))
-        def get_expanded_map(full_map_obs):
-            expanded_map = np.full((full_map_obs.shape[0], 96, 96), -1.0)
-            expanded_map[:, x : x + 48, y : y + 48] = full_map_obs
+        def get_expanded_map(full_map_obs: np.ndarray) -> Tensor:
+            expanded_map = torch.full((full_map_obs.shape[0], 96, 96), -1.0)
+            # unit is in lower right pixel of upper left quadrant
+            expanded_map[:, x:x+48, y:y+48] = Tensor(full_map_obs)
             return expanded_map
 
-        conv_minimaps = [
-            minimap
+        expanded_maps = torch.cat([
+            get_expanded_map(full_map_obs)
             for full_map_obs, _ in minimap_obs
-            if (expanded_map := get_expanded_map(full_map_obs)) is not None
-            for minimap in [
-                # small map (12x12 area)
-                expanded_map[:, 42:54, 42:54],
-                # medium map (24x24 area)
-                ObservationWrapper._mean_pool_2(expanded_map[:, 36:60, 36:60], 2),
-                # large map (48x48 area)
-                ObservationWrapper._mean_pool_2(expanded_map[:, 24:72, 24:72], 4),
-                # full map (96x96 area)
-                ObservationWrapper._mean_pool_2(expanded_map, 8)
-            ]
-        ]
-        conv_obs = torch.cat([torch.from_numpy(map) for map in conv_minimaps], dim=0)
-        """
+        ], dim=0)
+        conv_minimaps = torch.cat([
+            # small map (12x12 area)
+            expanded_maps[:, 42:54, 42:54],
+            # medium map (24x24 area)
+            ObservationWrapper._mean_pool(expanded_maps[:, 36:60, 36:60], 2),
+            # large map (48x48 area)
+            ObservationWrapper._mean_pool(expanded_maps[:, 24:72, 24:72], 4),
+            # full map (96x96 area)
+            ObservationWrapper._mean_pool(expanded_maps, 8),
+        ], dim=0)
+        is_skip_dim = [
+            skip
+            for full_map_obs, skip in minimap_obs
+            for _ in range(full_map_obs.shape[0])
+        ] * 4
+        skip_minimaps = conv_minimaps[is_skip_dim]
 
-        return ObservationWrapper._concat_obs(conv_minimaps, skip_minimaps)
+        return {"conv_obs": conv_minimaps, "skip_obs": skip_minimaps}
 
     @staticmethod
     def get_obs(
