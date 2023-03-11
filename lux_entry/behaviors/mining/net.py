@@ -23,6 +23,66 @@ N_FEATURES = 128
 N_ACTIONS = 12
 
 
+# TODO: if minimap extraction is done here, it call all be done in one batch
+"""
+def _mean_pool(arr: Tensor, window: int) -> Tensor:
+    return F.avg_pool2d(arr.unsqueeze(0), window, stride=window).squeeze(0)
+
+def _get_minimaps(full_obs: MapFeaturesObservation, x: int, y: int) -> Dict[str, Tensor]:
+    \"""
+    Create minimaps for a set of features around (x, y).
+    \"""
+    # observables to get minimaps for, as (observable, skip_obs)
+    minimap_obs = [
+        (full_obs.tile_has_ice, True),
+        (full_obs.tile_per_player_has_factory, False),
+        (full_obs.tile_per_player_has_robot, False),
+        (full_obs.tile_per_player_has_light_robot, False),
+        (full_obs.tile_per_player_has_heavy_robot, False),
+        (full_obs.tile_rubble, False),
+        (full_obs.tile_per_player_light_robot_power, False),
+        (full_obs.tile_per_player_heavy_robot_power, False),
+        (full_obs.tile_per_player_factory_ice_unbounded, False),
+        (full_obs.tile_per_player_factory_ore_unbounded, False),
+        (full_obs.tile_per_player_factory_water_unbounded, False),
+        (full_obs.tile_per_player_factory_metal_unbounded, False),
+        (full_obs.tile_per_player_factory_power_unbounded, False),
+        (full_obs.game_is_day, False),
+        (full_obs.game_day_or_night_elapsed, False),
+    ]
+
+    # create minimaps centered around x, y
+    def get_expanded_map(full_map_obs: np.ndarray) -> Tensor:
+        expanded_map = torch.full((full_map_obs.shape[0], 96, 96), -1.0)
+        # unit is in lower right pixel of upper left quadrant
+        expanded_map[:, x:x+48, y:y+48] = Tensor(full_map_obs)
+        return expanded_map
+
+    expanded_maps = torch.cat([
+        get_expanded_map(full_map_obs)
+        for full_map_obs, _ in minimap_obs
+    ], dim=0)
+    conv_minimaps = torch.cat([
+        # small map (12x12 area)
+        expanded_maps[:, 42:54, 42:54],
+        # medium map (24x24 area)
+        _mean_pool(expanded_maps[:, 36:60, 36:60], 2),
+        # large map (48x48 area)
+        _mean_pool(expanded_maps[:, 24:72, 24:72], 4),
+        # full map (96x96 area)
+        _mean_pool(expanded_maps, 8),
+    ], dim=0)
+    is_skip_dim = [
+        skip
+        for full_map_obs, skip in minimap_obs
+        for _ in range(full_map_obs.shape[0])
+    ] * 4
+    skip_minimaps = conv_minimaps[is_skip_dim]
+
+    return {"conv_obs": conv_minimaps, "skip_obs": skip_minimaps}
+"""
+
+
 class Net(PolicyNet):
     def __init__(self):
         """
