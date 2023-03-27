@@ -95,7 +95,7 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
 
 
 def get_full_obs(
-    env_obs: ObservationStateDict, env_cfg: EnvConfig, observation_space: spaces.Dict,
+    env_obs: ObservationStateDict, env_cfg: EnvConfig,
 ) -> MapFeaturesObservation:
     # normalization factors
     MAX_FS = env_cfg.MAX_FACTORIES
@@ -121,6 +121,7 @@ def get_full_obs(
     MAX_EPISODE_LENGTH = env_cfg.max_episode_length
 
     # init keys in observation as array of zeros of the right size
+    observation_space = get_full_obs_space(env_cfg)
     obs = {
         key: np.zeros(value.shape)
         if type(value) == spaces.MultiBinary
@@ -188,17 +189,3 @@ def get_full_obs(
     obs["valid_spawns_mask"][0] = env_obs["board"]["valid_spawns_mask"]
 
     return MapFeaturesObservation(**obs)
-
-
-def _get_full_obs(
-    env_obs: ObservationStateDict, env_cfg: EnvConfig, observation_space: spaces.Dict,
-) -> MapFeaturesObservation:
-    "For timing purposes."
-    import time, sys
-    start = time.time()
-    n_trials = 1000
-    for _ in range(n_trials):
-        obs = _get_full_obs(env_obs, env_cfg, observation_space)
-    end = time.time()
-    print("fps:", n_trials / (end - start), file=sys.stderr)
-    return obs

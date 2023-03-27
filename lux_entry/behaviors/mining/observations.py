@@ -6,21 +6,48 @@ from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.map_features_obs import MapFeaturesObservation, get_full_obs_space, get_full_obs
-from lux_entry.lux.state import EnvConfig
+from lux_entry.components.map_features_obs import MapFeaturesObservation, get_full_obs
+from lux_entry.lux.config import EnvConfig
+from lux_entry.lux.state import Player
 
 
 class ObservationWrapper(gym.ObservationWrapper):
-    def __init__(self, env: gym.Env) -> None:
+    def __init__(self, env: gym.Env, player: Player) -> None:
         super().__init__(env)
         self.env_cfg = self.env.state.env_cfg
         self.observation_space = spaces.Dict({
             "conv_obs":spaces.Box(-999, 999, shape=(104, 12, 12)),
             "skip_obs":spaces.Box(-999, 999, shape=(4, 12, 12)),
         })
+        self.player = player
 
     def observation(self, obs: ObservationStateDict) -> Dict[str, torch.Tensor]:
-        return ObservationWrapper.get_obs(obs, self.env_cfg, get_full_obs_space(self.env_cfg))
+        return ObservationWrapper.get_obs(obs, self.env_cfg, self.player)
+
+    @staticmethod
+    def get_obs(
+        obs: ObservationStateDict,
+        env_cfg: EnvConfig,
+        player: Player,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Get minimaps.
+        """
+        full_obs = get_full_obs(obs, env_cfg)
+        assert full_obs.tile_has_ice.shape == (1, 48, 48)
+
+        first_unit_obs = {
+            "conv_obs": torch.zeros((104, 12, 12)),
+            "skip_obs": torch.zeros((4, 12, 12)),
+        }
+        units = obs["units"][player]
+        for unit_info in units.values():
+            first_unit_obs = ObservationWrapper._get_minimaps(
+                full_obs, unit_info["pos"][0], unit_info["pos"][1]
+            )
+            break  # get just first unit
+
+        return first_unit_obs
 
     @staticmethod
     def _concat_obs(conv_obs: list[np.ndarray], skip_obs: list[np.ndarray]) -> Dict[str, torch.Tensor]:
@@ -92,29 +119,3 @@ class ObservationWrapper(gym.ObservationWrapper):
                 skip_minimaps.append(minimap)
 
         return ObservationWrapper._concat_obs(conv_minimaps, skip_minimaps)
-
-    @staticmethod
-    def get_obs(
-        obs: ObservationStateDict,
-        env_cfg: EnvConfig,
-        observation_space: spaces.Dict
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Get minimaps.
-        """
-        full_obs = get_full_obs(obs, env_cfg, observation_space)
-        assert full_obs.tile_has_ice.shape == (1, 48, 48)
-
-        first_unit_obs = {
-            "conv_obs": torch.zeros((104, 12, 12)),
-            "skip_obs": torch.zeros((4, 12, 12)),
-        }
-        for player in ["player_0", "player_1"]:
-            units = obs["units"][player]
-            for unit_info in units.values():
-                first_unit_obs = ObservationWrapper._get_minimaps(
-                    full_obs, unit_info["pos"][0], unit_info["pos"][1]
-                )
-                break  # get just first unit
-
-        return first_unit_obs

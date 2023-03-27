@@ -11,7 +11,6 @@ from stable_baselines3.common.utils import set_random_seed
 from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.components.base_wrapper import BaseWrapper
-from lux_entry.components.map_features_obs import get_full_obs_space
 from lux_entry.components.solitaire_wrapper import SolitaireWrapper
 from lux_entry.components.types import Controller, PolicyNet
 from lux_entry.heuristics import bidding, factory_placement
@@ -101,7 +100,7 @@ def make_env(
             controller=EnvController(env.env_cfg),
         )
         env = SolitaireWrapper(env, "player_0")
-        env = ObservationWrapper(env)
+        env = ObservationWrapper(env, "player_0")
         env = TrainingWrapper(env)
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
@@ -121,8 +120,7 @@ def evaluate(
     controller: Controller,
     net: PolicyNet
 ):
-    observation_space = get_full_obs_space(env_cfg)
-    obs = observations.ObservationWrapper.get_obs(env_obs, env_cfg, observation_space)
+    obs = observations.ObservationWrapper.get_obs(env_obs, env_cfg, player)
 
     with torch.no_grad():
         action_mask = add_batch_dimension(
