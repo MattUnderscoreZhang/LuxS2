@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 import yaml
 
-from stable_baselines3 import PPO
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -10,7 +9,7 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
 
 from lux_entry.training.env import make_env
-from lux_entry.training.net import CustomFeatureExtractor
+from lux_entry.training.net import get_model
 
 
 class TensorboardCallback(BaseCallback):
@@ -78,22 +77,7 @@ def main(args: argparse.Namespace):
         ]
     )
     env.reset()
-    model = PPO(
-        "MultiInputPolicy",
-        env,
-        n_steps=args.rollout_steps // args.n_envs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        policy_kwargs={
-            "features_extractor_class": CustomFeatureExtractor,
-            "net_arch": [64],
-        },
-        verbose=1,
-        n_epochs=2,
-        target_kl=args.target_kl,
-        gamma=args.gamma,
-        tensorboard_log=args.log_path,
-    )
+    model = get_model(env, args)
     if args.eval:
         evaluate(args, model)
     else:

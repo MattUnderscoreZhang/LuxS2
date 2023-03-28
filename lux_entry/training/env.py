@@ -4,7 +4,7 @@ from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
 import numpy as np
 import torch
-from typing import Callable, Any
+from typing import Callable, Any, Union
 
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
@@ -17,7 +17,11 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
 from lux_entry.training.controller import EnvController
-from lux_entry.training.observations import MapFeaturesObservation, get_full_obs, get_minimap_obs
+from lux_entry.training.observations import (
+    get_full_obs,
+    get_minimap_obs,
+    get_obs_by_job,
+)
 
 
 bid_policy = bidding.zero_bid
@@ -175,46 +179,17 @@ class ObservationWrapper(gym.ObservationWrapper):
         })
         self.player = player
 
-    def get_observations_by_job(
-        self,
-        full_obs: MapFeaturesObservation,
-        job: str
-    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        if job == "ice_miner":
-            full_conv_obs = [
-                full_obs.tile_per_player_has_factory,
-                full_obs.tile_per_player_has_robot,
-                full_obs.tile_per_player_has_light_robot,
-                full_obs.tile_per_player_has_heavy_robot,
-                full_obs.tile_rubble,
-                full_obs.tile_per_player_light_robot_power,
-                full_obs.tile_per_player_heavy_robot_power,
-                full_obs.tile_per_player_factory_ice_unbounded,
-                full_obs.tile_per_player_factory_ore_unbounded,
-                full_obs.tile_per_player_factory_water_unbounded,
-                full_obs.tile_per_player_factory_metal_unbounded,
-                full_obs.tile_per_player_factory_power_unbounded,
-                full_obs.game_is_day,
-                full_obs.game_day_or_night_elapsed,
-            ]
-            full_skip_obs = [
-                full_obs.tile_has_ice,
-            ]
-            return full_conv_obs, full_skip_obs
-        else:
-            raise ValueError(f"Unknown unit job: {job}")
-
-    def observation(self, obs: ObservationStateDict) -> dict[str, dict[str, torch.Tensor]]:
+    def observation(
+        self, obs: ObservationStateDict
+    ) -> dict[str, dict[str, Union[str, torch.Tensor]]]:
         """
         Get minimaps for each unit based on what it needs to know for its job.
         """
         full_obs = get_full_obs(obs, self.env_cfg)
         assert full_obs.tile_has_ice.shape == (1, 48, 48)
-        # TODO: assign unit jobs
-        # TODO: add function to change unit jobs
-        # TODO: get minimaps for each friendly unit on board, depending on unit job
 
         units = obs["units"][self.player]
+        # TODO: calculate unit jobs
         unit_jobs = {
             unit_info["unit_id"]: "ice_miner"
             for unit_info in units.values()
@@ -222,11 +197,12 @@ class ObservationWrapper(gym.ObservationWrapper):
         minimap_obs = {}
         for unit_info in units.values():
             unit_id = unit_info["unit_id"]
-            full_conv_obs, full_skip_obs = self.get_observations_by_job(full_obs, unit_jobs[unit_id])
+            full_conv_obs, full_skip_obs = get_obs_by_job(full_obs, unit_jobs[unit_id])
             conv_obs, skip_obs = get_minimap_obs(full_conv_obs, full_skip_obs, unit_info["pos"])
             minimap_obs[unit_id] = {
-                'conv_obs': torch.from_numpy(conv_obs).float(),
-                'skip_obs': torch.from_numpy(skip_obs).float(),
+                "job": unit_jobs[unit_id],
+                "conv_obs": torch.from_numpy(conv_obs).float(),
+                "skip_obs": torch.from_numpy(skip_obs).float(),
             }
         return minimap_obs
 

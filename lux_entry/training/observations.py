@@ -191,9 +191,13 @@ def get_full_obs(
     return MapFeaturesObservation(**obs)
 
 
-def get_minimap_obs(conv_obs: list[np.ndarray], skip_obs: list[np.ndarray], pos: np.ndarray) -> dict[str, torch.Tensor]:
+def get_minimap_obs(
+    full_conv_obs: list[np.ndarray], full_skip_obs: list[np.ndarray], pos: np.ndarray
+) -> dict[str, torch.Tensor]:
     """
     Create minimaps for a set of features around (x, y).
+    Conv obs are ones which will be convoluted together to extract high-level features.
+    Skip obs are used directly by the agent without alteration.
     """
     def _mean_pool(arr: np.ndarray, window: int) -> np.ndarray:
         arr = arr.reshape(
@@ -223,10 +227,39 @@ def get_minimap_obs(conv_obs: list[np.ndarray], skip_obs: list[np.ndarray], pos:
         )
         return minimap
 
-    conv_obs = [_get_minimap(value, pos[0], pos[1]) for value in conv_obs]
-    skip_obs = [_get_minimap(value, pos[0], pos[1]) for value in skip_obs]
+    conv_obs = [_get_minimap(value, pos[0], pos[1]) for value in full_conv_obs]
+    skip_obs = [_get_minimap(value, pos[0], pos[1]) for value in full_skip_obs]
 
     return {
         "conv_obs": torch.cat([torch.from_numpy(obs) for obs in conv_obs], dim=0),
         "skip_obs": torch.cat([torch.from_numpy(obs) for obs in skip_obs], dim=0),
     }
+
+
+def get_obs_by_job(
+    full_obs: MapFeaturesObservation,
+    job: str
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    if job == "ice_miner":
+        full_conv_obs = [
+            full_obs.tile_per_player_has_factory,
+            full_obs.tile_per_player_has_robot,
+            full_obs.tile_per_player_has_light_robot,
+            full_obs.tile_per_player_has_heavy_robot,
+            full_obs.tile_rubble,
+            full_obs.tile_per_player_light_robot_power,
+            full_obs.tile_per_player_heavy_robot_power,
+            full_obs.tile_per_player_factory_ice_unbounded,
+            full_obs.tile_per_player_factory_ore_unbounded,
+            full_obs.tile_per_player_factory_water_unbounded,
+            full_obs.tile_per_player_factory_metal_unbounded,
+            full_obs.tile_per_player_factory_power_unbounded,
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+        ]
+        full_skip_obs = [
+            full_obs.tile_has_ice,
+        ]
+        return full_conv_obs, full_skip_obs
+    else:
+        raise ValueError(f"Unknown unit job: {job}")

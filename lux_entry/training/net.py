@@ -1,12 +1,16 @@
 from gym import spaces
 from os import path
 import sys
+from luxai_s2.map_generator.generator import argparse
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
+from stable_baselines3 import PPO
+from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
@@ -18,74 +22,8 @@ N_FEATURES = 128
 N_ACTIONS = 12
 
 
-# TODO: if minimap extraction is done here, it call all be done in one batch
-"""
-def _mean_pool(arr: Tensor, window: int) -> Tensor:
-    return F.avg_pool2d(arr.unsqueeze(0), window, stride=window).squeeze(0)
-
-def _get_minimaps(full_obs: MapFeaturesObservation, x: int, y: int) -> dict[str, Tensor]:
-    \"""
-    Create minimaps for a set of features around (x, y).
-    \"""
-    # observables to get minimaps for, as (observable, skip_obs)
-    minimap_obs = [
-        (full_obs.tile_has_ice, True),
-        (full_obs.tile_per_player_has_factory, False),
-        (full_obs.tile_per_player_has_robot, False),
-        (full_obs.tile_per_player_has_light_robot, False),
-        (full_obs.tile_per_player_has_heavy_robot, False),
-        (full_obs.tile_rubble, False),
-        (full_obs.tile_per_player_light_robot_power, False),
-        (full_obs.tile_per_player_heavy_robot_power, False),
-        (full_obs.tile_per_player_factory_ice_unbounded, False),
-        (full_obs.tile_per_player_factory_ore_unbounded, False),
-        (full_obs.tile_per_player_factory_water_unbounded, False),
-        (full_obs.tile_per_player_factory_metal_unbounded, False),
-        (full_obs.tile_per_player_factory_power_unbounded, False),
-        (full_obs.game_is_day, False),
-        (full_obs.game_day_or_night_elapsed, False),
-    ]
-
-    # create minimaps centered around x, y
-    def get_expanded_map(full_map_obs: np.ndarray) -> Tensor:
-        expanded_map = torch.full((full_map_obs.shape[0], 96, 96), -1.0)
-        # unit is in lower right pixel of upper left quadrant
-        expanded_map[:, x:x+48, y:y+48] = Tensor(full_map_obs)
-        return expanded_map
-
-    expanded_maps = torch.cat([
-        get_expanded_map(full_map_obs)
-        for full_map_obs, _ in minimap_obs
-    ], dim=0)
-    conv_minimaps = torch.cat([
-        # small map (12x12 area)
-        expanded_maps[:, 42:54, 42:54],
-        # medium map (24x24 area)
-        _mean_pool(expanded_maps[:, 36:60, 36:60], 2),
-        # large map (48x48 area)
-        _mean_pool(expanded_maps[:, 24:72, 24:72], 4),
-        # full map (96x96 area)
-        _mean_pool(expanded_maps, 8),
-    ], dim=0)
-    is_skip_dim = [
-        skip
-        for full_map_obs, skip in minimap_obs
-        for _ in range(full_map_obs.shape[0])
-    ] * 4
-    skip_minimaps = conv_minimaps[is_skip_dim]
-
-    return {"conv_obs": conv_minimaps, "skip_obs": skip_minimaps}
-"""
-
-
-class Net(nn.Module):
+class JobNet(nn.Module):
     def __init__(self):
-        """
-        This net is used during both training and evaluation.
-        Net creation needs to take no arguments.
-        The net contains both a feature extractor and a fully-connected policy layer.
-        """
-        super().__init__()
         self.n_actions = N_ACTIONS
         self.n_features = N_FEATURES
         self.reduction_layer_1 = nn.Conv2d(N_CONV_OBS * 4, 30, 1)
@@ -100,26 +38,26 @@ class Net(nn.Module):
         self.action_layer_1 = nn.Linear(self.n_features, 64)
         self.action_layer_2 = nn.Linear(64, self.n_actions)
 
-    def extract_features(self, obs: dict[str, Tensor]) -> Tensor:
-        x = self.reduction_layer_1(obs["conv_obs"])
+    def extract_features(self, conv_obs: Tensor, skip_obs: Tensor) -> Tensor:
+        x = self.reduction_layer_1(conv_obs)
         x = self.tanh_layer_1(x)
         x = torch.cat([self.conv_layer_1(x), self.conv_layer_2(x)], dim=1)
         x = self.tanh_layer_2(x)
         x = self.reduction_layer_2(x)
         x = self.tanh_layer_3(x)
-        x = torch.cat([x, obs["skip_obs"]], dim=1)
+        x = torch.cat([x, skip_obs], dim=1)
         x = x.view(x.size(0), -1)
         x = self.fc_layer(x)
         x = self.tanh_layer_4(x)
         return x
 
-    def evaluate(
+    def forward(
         self,
         x: dict[str, Tensor],
         action_masks: Optional[Tensor] = None,
         deterministic: bool = False
     ) -> Tensor:
-        features = self.extract_features(x)
+        features = self.extract_features(x["conv_obs"], x["skip_obs"])
         x = self.action_layer_1(features)
         x = nn.Tanh()(x)
         action_logits = self.action_layer_2(x)
@@ -127,6 +65,75 @@ class Net(nn.Module):
             action_logits[~action_masks] = -1e8  # mask out invalid actions
         dist = torch.distributions.Categorical(logits=action_logits)
         return dist.mode if deterministic else dist.sample()
+
+
+class UnitsNet(nn.Module):
+    def __init__(self):
+        """
+        This net is used during both training and evaluation.
+        Net creation needs to take no arguments.
+        The net contains both a feature extractor and a fully-connected policy layer.
+        """
+        super().__init__()
+        jobs = [
+            "ice_miner",
+            "ore_miner",
+            "courier",
+            "sabateur",
+            "scout",
+            "soldier",
+            "builder",
+            "factory",
+        ]
+        self.nets = {
+            job: JobNet()
+            for job in jobs
+        }
+        for job, net in self.nets.items():
+            self.add_module(job, net)
+
+        self.latent_dim_pi = 64
+        self.latent_dim_vf = 64
+        self.policy_net = nn.Sequential(
+            nn.Linear(N_FEATURES * len(jobs), self.latent_dim_pi),
+            nn.ReLU(),
+        )
+        self.value_net = nn.Sequential(
+            nn.Linear(N_FEATURES * len(jobs), self.latent_dim_pi),
+            nn.ReLU(),
+        )
+
+    def extract_features(
+        self,
+        x: dict[str, Tensor],
+        action_masks: Optional[Tensor] = None,
+        deterministic: bool = False
+    ) -> Tensor:
+        unit_features = {
+            unit_id: self.nets[job].extract_features(conv_obs, skip_obs)
+            for unit_id, unit_obs in obs.items()
+            if (job := str(unit_obs["job"]))
+            and (conv_obs := Tensor(unit_obs["conv_obs"]))
+            and (skip_obs := Tensor(unit_obs["skip_obs"]))
+        }
+        x = self.action_layer_1(unit_features)
+        x = nn.Tanh()(x)
+        action_logits = self.action_layer_2(x)
+        if action_masks is not None:
+            action_logits[~action_masks] = -1e8  # mask out invalid actions
+        dist = torch.distributions.Categorical(logits=action_logits)
+        return dist.mode if deterministic else dist.sample()
+
+    def forward_actor(self, obs: Tensor) -> Tensor:
+        features = self.extract_features(obs)
+        return self.policy_net(features)
+
+    def forward_critic(self, obs: Tensor) -> Tensor:
+        features = self.extract_features(obs)
+        return self.value_net(features)
+
+    def forward(self, obs: Tensor) -> Tuple[Tensor, Tensor]:
+        return self.forward_actor(obs), self.forward_critic(obs)
 
     def load_weights(self, state_dict: Any) -> None:
         net_keys = [
@@ -158,15 +165,58 @@ class Net(nn.Module):
         self.load_state_dict(loaded_state_dict)
 
 
-class CustomFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Box):
-        """
-        This class is only used by the model function below during training.
-        The Net forward function has a fully-connected net after the feature extractor.
-        We call only the feature extractor, and SB3 adds (a) fully-connected layer(s) afterwards.
-        """
-        super().__init__(observation_space, N_FEATURES)
-        self.net = Net()
+class CustomActorCriticPolicy(ActorCriticPolicy):
+    def __init__(
+        self,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        lr_schedule: Callable[[float], float],
+        *args,
+        **kwargs,
+    ):
 
-    def forward(self, obs: dict[str, Tensor]) -> Tensor:
-        return self.net.extract_features(obs)
+        super().__init__(
+            observation_space,
+            action_space,
+            lr_schedule,
+            # Pass remaining arguments to base class
+            *args,
+            **kwargs,
+        )
+        # Disable orthogonal initialization
+        self.ortho_init = False
+
+    def _build_mlp_extractor(self) -> None:
+        self.mlp_extractor = UnitsNet()
+
+
+def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
+    model = PPO(
+        CustomActorCriticPolicy,
+        env,
+        n_steps=args.rollout_steps // args.n_envs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        verbose=1,
+        n_epochs=2,
+        target_kl=args.target_kl,
+        gamma=args.gamma,
+        tensorboard_log=args.log_path,
+    )
+    # model = PPO(
+        # "MultiInputPolicy",
+        # env,
+        # n_steps=args.rollout_steps // args.n_envs,
+        # batch_size=args.batch_size,
+        # learning_rate=args.learning_rate,
+        # policy_kwargs={
+            # "features_extractor_class": CustomFeatureExtractor,
+            # "net_arch": [64],
+        # },
+        # verbose=1,
+        # n_epochs=2,
+        # target_kl=args.target_kl,
+        # gamma=args.gamma,
+        # tensorboard_log=args.log_path,
+    # )
+    return model
