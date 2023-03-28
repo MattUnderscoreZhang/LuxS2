@@ -6,12 +6,17 @@ import sys
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-from lux_entry.components.types import PolicyNet
+from luxai_s2.state import ObservationStateDict
+
+from lux_entry.lux.config import EnvConfig
+from lux_entry.lux.state import Player
+from lux_entry.lux.utils import add_batch_dimension
+from lux_entry.training.env import ObservationWrapper
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
@@ -28,7 +33,7 @@ N_ACTIONS = 12
 def _mean_pool(arr: Tensor, window: int) -> Tensor:
     return F.avg_pool2d(arr.unsqueeze(0), window, stride=window).squeeze(0)
 
-def _get_minimaps(full_obs: MapFeaturesObservation, x: int, y: int) -> Dict[str, Tensor]:
+def _get_minimaps(full_obs: MapFeaturesObservation, x: int, y: int) -> dict[str, Tensor]:
     \"""
     Create minimaps for a set of features around (x, y).
     \"""
@@ -83,7 +88,7 @@ def _get_minimaps(full_obs: MapFeaturesObservation, x: int, y: int) -> Dict[str,
 """
 
 
-class Net(PolicyNet):
+class Net(nn.Module):
     def __init__(self):
         """
         This net is used during both training and evaluation.
@@ -105,7 +110,7 @@ class Net(PolicyNet):
         self.action_layer_1 = nn.Linear(self.n_features, 64)
         self.action_layer_2 = nn.Linear(64, self.n_actions)
 
-    def extract_features(self, obs: Dict[str, Tensor]) -> Tensor:
+    def extract_features(self, obs: dict[str, Tensor]) -> Tensor:
         x = self.reduction_layer_1(obs["conv_obs"])
         x = self.tanh_layer_1(x)
         x = torch.cat([self.conv_layer_1(x), self.conv_layer_2(x)], dim=1)
@@ -120,7 +125,7 @@ class Net(PolicyNet):
 
     def evaluate(
         self,
-        x: Dict[str, Tensor],
+        x: dict[str, Tensor],
         action_masks: Optional[Tensor] = None,
         deterministic: bool = False
     ) -> Tensor:
@@ -173,7 +178,7 @@ class CustomFeatureExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, N_FEATURES)
         self.net = Net()
 
-    def forward(self, obs: Dict[str, Tensor]) -> Tensor:
+    def forward(self, obs: dict[str, Tensor]) -> Tensor:
         return self.net.extract_features(obs)
 
 
@@ -199,3 +204,27 @@ def model(env: gym.Env, args: argparse.Namespace):
         gamma=args.gamma,
         tensorboard_log=path.join(args.log_path),
     )
+
+
+def evaluate(
+    step: int,
+    env_obs: ObservationStateDict,
+    remainingOverageTime: int,
+    player: Player,
+    env_cfg: EnvConfig,
+    controller: Controller,
+    net: nn.Module,
+):
+    obs = ObservationWrapper.get_obs(env_obs, env_cfg, player)
+
+    with torch.no_grad():
+        action_mask = add_batch_dimension(
+            controller.action_masks(player=player, obs=env_obs)
+        ).bool()
+        observation = add_batch_dimension(obs)
+        actions = (
+            net.evaluate(observation, deterministic=False, action_masks=action_mask)
+            .cpu()
+            .numpy()
+        )
+    return controller.action_to_lux_action(player, env_obs, actions[0])

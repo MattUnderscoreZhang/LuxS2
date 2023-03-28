@@ -4,12 +4,11 @@ from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.types import Controller
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 
 
-class EnvController(Controller):
+class EnvController:
     def __init__(self, env_cfg: EnvConfig) -> None:
         """
         A controller sets the action space, converts actions to Lux actions, and calculates action masks.
@@ -49,38 +48,36 @@ class EnvController(Controller):
         self.no_op_dim_high = self.dig_dim_high + self.no_op_dims
 
         self.total_act_dims = self.no_op_dim_high
-        action_space = spaces.Discrete(self.total_act_dims)
-        super().__init__(action_space)
+        self.action_space = spaces.Discrete(self.total_act_dims)
 
-    # TODO: this action controller is atrocious
-    def _is_move_action(self, id: np.int64) -> np.bool_:
+    def _is_move_action(self, id):
         return id < self.move_dim_high
 
-    def _get_move_action(self, id: np.int64) -> np.ndarray:
+    def _get_move_action(self, id):
         # move direction is id + 1 since we don't allow move center here
         return np.array([0, id + 1, 0, 0, 0, 1])
 
-    def _is_transfer_action(self, id: np.int64) -> np.bool_:
+    def _is_transfer_action(self, id):
         return id < self.transfer_dim_high
 
-    def _get_transfer_action(self, id: np.int64) -> np.ndarray:
+    def _get_transfer_action(self, id):
         id = id - self.move_dim_high
         transfer_dir = id % 5
         return np.array([1, transfer_dir, 0, self.env_cfg.max_transfer_amount, 0, 1])
 
-    def _is_pickup_action(self, id: np.int64) -> np.bool_:
+    def _is_pickup_action(self, id):
         return id < self.pickup_dim_high
 
-    def _get_pickup_action(self, id: np.int64) -> np.ndarray:
+    def _get_pickup_action(self, id):
         return np.array([2, 0, 4, self.env_cfg.max_transfer_amount, 0, 1])
 
-    def _is_dig_action(self, id: np.int64) -> np.bool_:
+    def _is_dig_action(self, id):
         return id < self.dig_dim_high
 
-    def _get_dig_action(self, id: np.int64) -> np.ndarray:
+    def _get_dig_action(self, id):
         return np.array([3, 0, 0, 0, 0, 1])
 
-    def action_to_lux_action(self, player: Player, obs: ObservationStateDict, action: np.int64) -> Dict[str, int]:
+    def action_to_lux_action(self, player: Player, obs: ObservationStateDict, action: np.ndarray) -> Dict[str, int]:
         lux_action = dict()
         units = obs["units"][player]
         for unit_id in units.keys():
@@ -118,13 +115,13 @@ class EnvController(Controller):
 
         return lux_action
 
-    # TODO: factor this out if it's not being used during training
     def action_masks(self, player: Player, obs: ObservationStateDict) -> np.ndarray:
         """
-        Defines a simplified action mask for this controller's action space.
-        Doesn't account for whether robot has enough power.
-        Only appears to be used during evaluation, not training.
+        Defines a simplified action mask for this controller's action space
+
+        Doesn't account for whether robot has enough power
         """
+
         # compute a factory occupancy map that will be useful for checking if a board tile
         # has a factory and which team's factory it is.
         factory_occupancy_map = (

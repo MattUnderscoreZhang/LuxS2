@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from gym import spaces
 import numpy as np
-from typing import Dict, get_type_hints
+import torch
+from typing import get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict, Team
 
@@ -13,7 +14,6 @@ class MapFeaturesObservation:
     """
     per map-tile features
     """
-
     # binary yes/no
     tile_has_ice: np.ndarray
     tile_has_ore: np.ndarray
@@ -59,7 +59,7 @@ class MapFeaturesObservation:
     """
     bidding and factory placement info
     """
-    teams: Dict[str, Team]  # not broadcast
+    teams: dict[str, Team]  # not broadcast
     factories_per_team: int  # not broadcast
     valid_spawns_mask: np.ndarray
 
@@ -189,3 +189,48 @@ def get_full_obs(
     obs["valid_spawns_mask"][0] = env_obs["board"]["valid_spawns_mask"]
 
     return MapFeaturesObservation(**obs)
+
+
+def get_minimap_obs(minimap_obs: list[tuple[np.ndarray, bool]], pos: np.ndarray) -> dict[str, torch.Tensor]:
+    """
+    Create minimaps for a set of features around (x, y).
+    """
+    def _mean_pool(arr: np.ndarray, window: int) -> np.ndarray:
+        arr = arr.reshape(
+            arr.shape[0] // window, window, arr.shape[1] // window, window
+        )
+        return np.mean(arr, axis=(1, 3))
+
+    # create minimaps centered around x, y
+    x, y = pos
+    conv_obs = []
+    skip_obs = []
+    for value, skip in minimap_obs:
+        expanded_map = np.full((value.shape[0], 96, 96), -1.0)
+        minimap = np.zeros((value.shape[0] * 4, 12, 12))
+        for p in range(value.shape[0]):
+            # unit is in lower right pixel of upper left quadrant
+            expanded_map[p][x : x + 48, y : y + 48] = value[p]
+            # small map (12x12 area)
+            minimap[p * 4] = expanded_map[p][42:54, 42:54]
+            # medium map (24x24 area)
+            minimap[p * 4 + 1] = _mean_pool(expanded_map[p][36:60, 36:60], 2)
+            # large map (48x48 area)
+            minimap[p * 4 + 2] = _mean_pool(expanded_map[p][24:72, 24:72], 4)
+            # full map (96x96 area)
+            minimap[p * 4 + 3] = _mean_pool(expanded_map[p], 8)
+        conv_obs.append(minimap)
+        if skip:
+            skip_obs.append(minimap)
+
+    for obs in conv_obs + skip_obs:
+        assert (
+            len(obs.shape) == 3
+            # variable second dimension
+            and obs.shape[1] == 12
+            and obs.shape[2] == 12
+        )
+    return {
+        "conv_obs": torch.cat([torch.from_numpy(obs) for obs in conv_obs], dim=0),
+        "skip_obs": torch.cat([torch.from_numpy(obs) for obs in skip_obs], dim=0),
+    }
