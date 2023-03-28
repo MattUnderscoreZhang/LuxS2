@@ -191,7 +191,7 @@ def get_full_obs(
     return MapFeaturesObservation(**obs)
 
 
-def get_minimap_obs(minimap_obs: list[tuple[np.ndarray, bool]], pos: np.ndarray) -> dict[str, torch.Tensor]:
+def get_minimap_obs(obs_to_process: list[tuple[np.ndarray, bool]], pos: np.ndarray) -> dict[str, torch.Tensor]:
     """
     Create minimaps for a set of features around (x, y).
     """
@@ -205,7 +205,7 @@ def get_minimap_obs(minimap_obs: list[tuple[np.ndarray, bool]], pos: np.ndarray)
     x, y = pos
     conv_obs = []
     skip_obs = []
-    for value, skip in minimap_obs:
+    for value, skip in obs_to_process:
         expanded_map = np.full((value.shape[0], 96, 96), -1.0)
         minimap = np.zeros((value.shape[0] * 4, 12, 12))
         for p in range(value.shape[0]):

@@ -204,27 +204,3 @@ def model(env: gym.Env, args: argparse.Namespace):
         gamma=args.gamma,
         tensorboard_log=path.join(args.log_path),
     )
-
-
-def evaluate(
-    step: int,
-    env_obs: ObservationStateDict,
-    remainingOverageTime: int,
-    player: Player,
-    env_cfg: EnvConfig,
-    controller: Controller,
-    net: nn.Module,
-):
-    obs = ObservationWrapper.get_obs(env_obs, env_cfg, player)
-
-    with torch.no_grad():
-        action_mask = add_batch_dimension(
-            controller.action_masks(player=player, obs=env_obs)
-        ).bool()
-        observation = add_batch_dimension(obs)
-        actions = (
-            net.evaluate(observation, deterministic=False, action_masks=action_mask)
-            .cpu()
-            .numpy()
-        )
-    return controller.action_to_lux_action(player, env_obs, actions[0])

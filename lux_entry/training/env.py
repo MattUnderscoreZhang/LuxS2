@@ -4,7 +4,7 @@ from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
 import numpy as np
 import torch
-from typing import Callable, Dict, Tuple, Any
+from typing import Callable, Any
 
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
@@ -20,6 +20,11 @@ from lux_entry.training.controller import EnvController
 from lux_entry.training.observations import get_full_obs, get_minimap_obs
 
 
+bid_policy = bidding.zero_bid
+factory_placement_policy = factory_placement.place_near_random_ice
+controller = EnvController
+
+
 def make_env(
     rank: int, seed: int = 0, max_episode_steps: int = 100
 ) -> Callable[[], gym.Env]:
@@ -32,9 +37,9 @@ def make_env(
         env = gym.make(id="LuxAI_S2-v0", verbose=0, collect_stats=True, MAX_FACTORIES=2)
         env = BaseWrapper(
             env,
-            bid_policy=bidding.zero_bid,
-            factory_placement_policy=factory_placement.place_near_random_ice,
-            controller=EnvController(env.env_cfg),
+            bid_policy=bid_policy,
+            factory_placement_policy=factory_placement_policy,
+            controller=controller(env.env_cfg),
         )
         env = SolitaireWrapper(env, "player_0")
         env = ObservationWrapper(env, "player_0")
@@ -60,7 +65,7 @@ class BaseWrapper(gym.Wrapper):
     ) -> None:
         """
         This wrapper goes around LuxAI_S2, which is directly called whenever self.env is invoked.
-        LuxAI_S2 takes actions and outputs transitions for both agents simultaneously, in the form Dict[Player, Any].
+        LuxAI_S2 takes actions and outputs transitions for both agents simultaneously, in the form dict[Player, Any].
         This wrapper takes a bid and factory placement policy, which both players use to play the first two game phases on reset.
         The wrapper also takes an action controller, which is used to set the action space and convert to LuxAI_S2 actions on step.
         """
@@ -73,12 +78,12 @@ class BaseWrapper(gym.Wrapper):
         self.prev_obs = None
 
     def step(
-        self, player_actions: Dict[Player, np.ndarray]
-    ) -> Tuple[
-        Dict[Player, ObservationStateDict],  # obs
-        Dict[Player, float],  # reward
-        Dict[Player, bool],  # done
-        Dict[Player, Any],  # info
+        self, player_actions: dict[Player, np.ndarray]
+    ) -> tuple[
+        dict[Player, ObservationStateDict],  # obs
+        dict[Player, float],  # reward
+        dict[Player, bool],  # done
+        dict[Player, Any],  # info
     ]:
         """
         Actions for one or more players are passed in, and are converted to Lux actions.
@@ -101,7 +106,7 @@ class BaseWrapper(gym.Wrapper):
         self.prev_obs = obs
         return obs, reward, done, info
 
-    def reset(self, **kwargs) -> Dict[Player, ObservationStateDict]:
+    def reset(self, **kwargs) -> dict[Player, ObservationStateDict]:
         """
         Reset the LuxAI_S2 environment first.
         Then both players use the provided bid and factory placement policies to play the first two game phases.
@@ -145,7 +150,7 @@ class SolitaireWrapper(gym.Wrapper):
         self.env = env
         self.player = player
 
-    def step(self, action: np.ndarray) -> Tuple[
+    def step(self, action: np.ndarray) -> tuple[
         ObservationStateDict,  # obs
         float,  # reward
         bool,  # done
@@ -155,7 +160,7 @@ class SolitaireWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step(dual_action)
         return obs[self.player], reward[self.player], done[self.player], info[self.player]
 
-    def reset(self, **kwargs) -> Dict[Player, ObservationStateDict]:
+    def reset(self, **kwargs) -> dict[Player, ObservationStateDict]:
         obs = self.env.reset(**kwargs)
         return obs[self.player]
 

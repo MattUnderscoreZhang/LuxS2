@@ -7,13 +7,10 @@ import zipfile
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.types import Controller
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
-from lux_entry.lux.utils import my_turn_to_place_factory, process_action, process_obs
-
-# change this to import a different behavior
-from lux_entry.behaviors.mining import env, net
+from lux_entry.lux.utils import add_batch_dimension, my_turn_to_place_factory, process_action, process_obs
+from lux_entry.training import env, net
 
 
 class Agent:
@@ -24,7 +21,7 @@ class Agent:
         self.net: net.Net = self._load_net(net.Net, net.WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.eval().to(device)
-        self.controller: Controller = env.EnvController(self.env_cfg)
+        self.controller: env.EnvController = env.EnvController(self.env_cfg)
 
     def _load_net(self, model_class: type[net.Net], model_path: str) -> net.Net:
         if model_path[-4:] == ".zip":
@@ -62,15 +59,19 @@ class Agent:
     def act(
         self, step: int, env_obs: ObservationStateDict, remainingOverageTime: int = 60
     ):
-        return env.evaluate(
-            step=step,
-            env_obs=env_obs,
-            remainingOverageTime=remainingOverageTime,
-            player=self.player,
-            env_cfg=self.env_cfg,
-            controller=self.controller,
-            net=self.net,
-        )
+        obs = ObservationWrapper.get_obs(env_obs, self.env_cfg, self.player)
+
+        with torch.no_grad():
+            action_mask = add_batch_dimension(
+                self.controller.action_masks(player=self.player, obs=env_obs)
+            ).bool()
+            observation = add_batch_dimension(obs)
+            actions = (
+                self.net.evaluate(observation, deterministic=False, action_masks=action_mask)
+                .cpu()
+                .numpy()
+            )
+        return self.controller.action_to_lux_action(self.player, env_obs, actions[0])
 
 
 ### DO NOT REMOVE THE FOLLOWING CODE ###
