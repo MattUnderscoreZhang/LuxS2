@@ -1,5 +1,3 @@
-import argparse
-import gym
 from gym import spaces
 from os import path
 import sys
@@ -8,15 +6,7 @@ from torch import nn
 from torch.functional import Tensor
 from typing import Any, Optional
 
-from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-
-from luxai_s2.state import ObservationStateDict
-
-from lux_entry.lux.config import EnvConfig
-from lux_entry.lux.state import Player
-from lux_entry.lux.utils import add_batch_dimension
-from lux_entry.training.env import ObservationWrapper
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
@@ -180,27 +170,3 @@ class CustomFeatureExtractor(BaseFeaturesExtractor):
 
     def forward(self, obs: dict[str, Tensor]) -> Tensor:
         return self.net.extract_features(obs)
-
-
-def model(env: gym.Env, args: argparse.Namespace):
-    """
-    This model is only used for training.
-    SB3 adds a fully-connected net after the feature extractor.
-    Fully-connected hidden-layer shapes can be manually specified via the net_arch parameter.
-    """
-    return PPO(
-        "MultiInputPolicy",
-        env,
-        n_steps=args.rollout_steps // args.n_envs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        policy_kwargs={
-            "features_extractor_class": CustomFeatureExtractor,
-            "net_arch": [64],
-        },
-        verbose=1,
-        n_epochs=2,
-        target_kl=args.target_kl,
-        gamma=args.gamma,
-        tensorboard_log=path.join(args.log_path),
-    )
