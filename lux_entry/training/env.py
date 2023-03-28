@@ -68,10 +68,9 @@ class BaseWrapper(gym.Wrapper):
         controller: EnvController,
     ) -> None:
         """
-        This wrapper goes around LuxAI_S2, which is directly called whenever self.env is invoked.
-        LuxAI_S2 takes actions and outputs transitions for both agents simultaneously, in the form dict[Player, Any].
-        This wrapper takes a bid and factory placement policy, which both players use to play the first two game phases on reset.
-        The wrapper also takes an action controller, which is used to set the action space and convert to LuxAI_S2 actions on step.
+        Uses bid_policy and factory_placement_policy to auto-play the first two game phases.
+        Uses controller to convert actions to LuxAI_S2 actions.
+        Takes actions and outputs transitions for both players simultaneously.
         """
         super().__init__(env)
         self.env = env
@@ -92,7 +91,7 @@ class BaseWrapper(gym.Wrapper):
         """
         Actions for one or more players are passed in, and are converted to Lux actions.
         If the input only contains an action for one player, the other gets an empty dict.
-        The actions is fed to LuxAI_S2, which returns a transition for both players.
+        The actions are fed to LuxAI_S2, which returns a transition for both players.
         """
         # here, for each player in the game we translate their action into a Lux S2 action
         lux_action = dict()
@@ -112,8 +111,9 @@ class BaseWrapper(gym.Wrapper):
 
     def reset(self, **kwargs) -> dict[Player, ObservationStateDict]:
         """
-        Reset the LuxAI_S2 environment first.
-        Then both players use the provided bid and factory placement policies to play the first two game phases.
+        Reset the LuxAI_S2 environment.
+        The bid and factory placement policies are used to play the first two game phases.
+        Both players use the same policies.
         """
         # we call the original reset function first
         obs = self.env.reset(**kwargs)
@@ -147,8 +147,8 @@ class BaseWrapper(gym.Wrapper):
 class SolitaireWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env, player: Player) -> None:
         """
-        This wrapper makes the step() function take a single action for a single player, and return single-player values.
-        Opponents don't get an action.
+        step() takes a single player action and returns a single-player transition.
+        An empty action is filled in for the opponent.
         """
         super().__init__(env)
         self.env = env
@@ -210,8 +210,7 @@ class ObservationWrapper(gym.ObservationWrapper):
 class TrainingWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env) -> None:
         """
-        Adds a custom reward and turns the LuxAI_S2 environment into a single-agent environment for easy training.
-        Only a single player's action is passed to step. Only single-player transitions are returned.
+        Alters the environment between steps for training purposes.
         """
         super().__init__(env)
         self.prev_step_metrics = None
@@ -223,7 +222,7 @@ class TrainingWrapper(gym.Wrapper):
         Update the environment state directly to keep the enemy alive.
         Set enemy factories to have 1000 water so the game can be treated as single-agent.
         Send a single-player action and return a single-player transition.
-        We calculate our own reward and info, where info["metrics"] is used with Tensorboard in train.py.
+        Calculate reward and info, with info["metrics"] passed to Tensorboard in train.py.
         """
         # keep the enemy alive
         for factory in self.env.state.factories[self.opp_player].values():
@@ -247,8 +246,10 @@ class TrainingWrapper(gym.Wrapper):
         reward = 0
         if self.prev_step_metrics is not None:
             ice_dug_this_step = metrics["ice_dug"] - self.prev_step_metrics["ice_dug"]
-            water_produced_this_step = metrics["water_produced"] - self.prev_step_metrics["water_produced"]
-            reward = ice_dug_this_step / 100 + water_produced_this_step  # water is more important
+            water_produced_this_step = (
+                metrics["water_produced"] - self.prev_step_metrics["water_produced"]
+            )
+            reward = ice_dug_this_step / 100 + water_produced_this_step  # prioritize water
         self.prev_step_metrics = copy.deepcopy(metrics)
 
         return obs, reward, done, info

@@ -1,6 +1,5 @@
 from gym import spaces
 import numpy as np
-from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -11,10 +10,10 @@ from lux_entry.lux.state import Player
 class EnvController:
     def __init__(self, env_cfg: EnvConfig) -> None:
         """
-        A controller sets the action space, converts actions to Lux actions, and calculates action masks.
+        Set the action space, convert actions to Lux actions, and calculate action masks.
 
         This simple controller controls only a single robot.
-        It will always try to spawn one heavy robot if there are none regardless of action given.
+        It will always try to spawn one heavy robot if there are none.
 
         For the robot unit
         - 4 cardinal direction movement (4 dims)
@@ -31,8 +30,7 @@ class EnvController:
         - factory actions
         - transferring power or resources other than ice
 
-        To help understand how to this controller works to map one action space to the original lux action space,
-        see how the lux action space is defined in luxai_s2/spaces/action.py
+        For more info, see the lux action space definition in luxai_s2/spaces/action.py
         """
         self.env_cfg = env_cfg
         self.move_act_dims = 4
@@ -77,7 +75,9 @@ class EnvController:
     def _get_dig_action(self, id):
         return np.array([3, 0, 0, 0, 0, 1])
 
-    def action_to_lux_action(self, player: Player, obs: ObservationStateDict, action: np.ndarray) -> Dict[str, int]:
+    def action_to_lux_action(
+        self, player: Player, obs: ObservationStateDict, action: np.ndarray
+    ) -> dict[str, int]:
         lux_action = dict()
         units = obs["units"][player]
         for unit_id in units.keys():

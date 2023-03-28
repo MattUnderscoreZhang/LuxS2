@@ -5,11 +5,10 @@ from luxai_s2.map_generator.generator import argparse
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 
@@ -36,9 +35,16 @@ class JobNet(nn.Module):
         self.fc_layer= nn.Linear((5 + N_SKIP_OBS * 4) * 12 * 12, self.n_features)
         self.tanh_layer_4 = nn.Tanh()
         self.action_layer_1 = nn.Linear(self.n_features, 64)
+        self.tanh_layer_5 = nn.Tanh()
         self.action_layer_2 = nn.Linear(64, self.n_actions)
 
-    def extract_features(self, conv_obs: Tensor, skip_obs: Tensor) -> Tensor:
+    def forward(
+        self,
+        obs: dict[str, Tensor],
+        action_masks: Optional[Tensor] = None,
+        deterministic: bool = False
+    ) -> Tensor:
+        conv_obs, skip_obs = obs["conv_obs"], obs["skip_obs"]
         x = self.reduction_layer_1(conv_obs)
         x = self.tanh_layer_1(x)
         x = torch.cat([self.conv_layer_1(x), self.conv_layer_2(x)], dim=1)
@@ -49,17 +55,8 @@ class JobNet(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc_layer(x)
         x = self.tanh_layer_4(x)
-        return x
-
-    def forward(
-        self,
-        x: dict[str, Tensor],
-        action_masks: Optional[Tensor] = None,
-        deterministic: bool = False
-    ) -> Tensor:
-        features = self.extract_features(x["conv_obs"], x["skip_obs"])
-        x = self.action_layer_1(features)
-        x = nn.Tanh()(x)
+        x = self.action_layer_1(x)
+        x = self.tanh_layer_5(x)
         action_logits = self.action_layer_2(x)
         if action_masks is not None:
             action_logits[~action_masks] = -1e8  # mask out invalid actions
@@ -136,6 +133,7 @@ class UnitsNet(nn.Module):
         return self.forward_actor(obs), self.forward_critic(obs)
 
     def load_weights(self, state_dict: Any) -> None:
+        # TODO: make weights load separately for each job type
         net_keys = [
             layer_name
             for layer in [

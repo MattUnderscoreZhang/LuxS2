@@ -15,43 +15,43 @@ class MapFeaturesObservation:
     per map-tile features
     """
     # binary yes/no
-    tile_has_ice: np.ndarray
-    tile_has_ore: np.ndarray
-    tile_has_lichen_strain: np.ndarray
-    tile_per_player_has_factory: np.ndarray
-    tile_per_player_has_robot: np.ndarray
-    tile_per_player_has_light_robot: np.ndarray
-    tile_per_player_has_heavy_robot: np.ndarray
-    tile_per_player_has_lichen: np.ndarray
+    has_ice: np.ndarray
+    has_ore: np.ndarray
+    has_lichen_strain: np.ndarray
+    player_has_factory: np.ndarray
+    player_has_robot: np.ndarray
+    player_has_light_robot: np.ndarray
+    player_has_heavy_robot: np.ndarray
+    player_has_lichen: np.ndarray
     # normalized from 0-1, -1 means inapplicable
-    tile_rubble: np.ndarray
-    tile_per_player_lichen: np.ndarray
-    tile_per_player_light_robot_power: np.ndarray
-    tile_per_player_light_robot_ice: np.ndarray
-    tile_per_player_light_robot_ore: np.ndarray
-    tile_per_player_heavy_robot_power: np.ndarray
-    tile_per_player_heavy_robot_ice: np.ndarray
-    tile_per_player_heavy_robot_ore: np.ndarray
-    # normalized and positive unbounded, -1 means inapplicable
-    tile_per_player_factory_ice_unbounded: np.ndarray
-    tile_per_player_factory_ore_unbounded: np.ndarray
-    tile_per_player_factory_water_unbounded: np.ndarray
-    tile_per_player_factory_metal_unbounded: np.ndarray
-    tile_per_player_factory_power_unbounded: np.ndarray
+    rubble: np.ndarray
+    player_lichen: np.ndarray
+    player_light_robot_power: np.ndarray
+    player_light_robot_ice: np.ndarray
+    player_light_robot_ore: np.ndarray
+    player_heavy_robot_power: np.ndarray
+    player_heavy_robot_ice: np.ndarray
+    player_heavy_robot_ore: np.ndarray
+    # normalized and positive unb, -1 means inapplicable
+    player_factory_ice_unb: np.ndarray
+    player_factory_ore_unb: np.ndarray
+    player_factory_water_unb: np.ndarray
+    player_factory_metal_unb: np.ndarray
+    player_factory_power_unb: np.ndarray
     """
     broadcast features
     """
-    # normalized and positive unbounded
-    total_per_player_robots_unbounded: np.ndarray
-    total_per_player_light_robots_unbounded: np.ndarray
-    total_per_player_heavy_robots_unbounded: np.ndarray
-    total_per_player_factories_unbounded: np.ndarray
-    total_per_player_factory_ice_unbounded: np.ndarray
-    total_per_player_factory_ore_unbounded: np.ndarray
-    total_per_player_factory_water_unbounded: np.ndarray
-    total_per_player_factory_metal_unbounded: np.ndarray
-    total_per_player_factory_power_unbounded: np.ndarray
-    total_per_player_lichen_unbounded: np.ndarray
+    # normalized and positive unb
+    player_tot_robots_unb: np.ndarray
+    player_tot_light_robots_unb: np.ndarray
+    player_tot_heavy_robots_unb: np.ndarray
+    player_tot_factories_unb: np.ndarray
+    player_tot_factory_ice_unb: np.ndarray
+    player_tot_factory_ore_unb: np.ndarray
+    player_tot_factory_water_unb: np.ndarray
+    player_tot_factory_metal_unb: np.ndarray
+    player_tot_factory_power_unb: np.ndarray
+    player_tot_lichen_unb: np.ndarray
     # normalized from 0-1
     game_is_day: np.ndarray
     game_day_or_night_elapsed: np.ndarray
@@ -70,9 +70,9 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
     for key in get_type_hints(MapFeaturesObservation).keys():
         n_features = (
             2
-            if "_per_player_" in key
+            if "player_" in key
             else 2 * env_cfg.MAX_FACTORIES
-            if key == "tile_has_lichen_strain"
+            if key == "has_lichen_strain"
             else 1
         )
         low = (
@@ -80,10 +80,10 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
             if (("_robot_" in key or "_factory_" in key) and "total_" not in key)
             else 0.0
         )
-        high = np.inf if "_unbounded" in key else 1.0
+        high = np.inf if "_unb" in key else 1.0
         spaces_dict[key] = (
             spaces.MultiBinary((n_features, map_size, map_size))
-            if "_has_" in key or "_is_" in key
+            if "has_" in key or "is_" in key
             else spaces.Dict()
             if key == "teams"
             else int
@@ -131,50 +131,50 @@ def get_full_obs(
     }
 
     # fill in observations
-    obs["tile_has_ice"][0] = env_obs["board"]["ice"]
-    obs["tile_has_ore"][0] = env_obs["board"]["ore"]
+    obs["has_ice"][0] = env_obs["board"]["ice"]
+    obs["has_ore"][0] = env_obs["board"]["ore"]
     for i in range(2 * env_cfg.MAX_FACTORIES):
-        obs["tile_has_lichen_strain"][i] = env_obs["board"]["lichen_strains"] == i
-    obs["tile_rubble"][0] = env_obs["board"]["rubble"] / MAX_RUBBLE
+        obs["has_lichen_strain"][i] = env_obs["board"]["lichen_strains"] == i
+    obs["rubble"][0] = env_obs["board"]["rubble"] / MAX_RUBBLE
     lichen_strains = [[], []]
     for p, player in enumerate(["player_0", "player_1"]):
         for f in env_obs["factories"][player].values():
             cargo = f["cargo"]
             pos = (p, f["pos"][0], f["pos"][1])
             lichen_strains[p].append(f["strain_id"])
-            obs["tile_per_player_has_factory"][pos] = 1
-            obs["tile_per_player_factory_ice_unbounded"][pos] = cargo["ice"] / EXP_MAX_F_CARGO
-            obs["tile_per_player_factory_ore_unbounded"][pos] = cargo["ore"] / EXP_MAX_F_CARGO
-            obs["tile_per_player_factory_water_unbounded"][pos] = cargo["water"] / EXP_MAX_F_WATER
-            obs["tile_per_player_factory_metal_unbounded"][pos] = cargo["metal"] / EXP_MAX_F_METAL
-            obs["tile_per_player_factory_power_unbounded"][pos] = f["power"] / EXP_MAX_F_POWER
-            obs["total_per_player_factory_ice_unbounded"][p] += cargo["ice"] / EXP_MAX_TOT_F_CARGO
-            obs["total_per_player_factory_ore_unbounded"][p] += cargo["ore"] / EXP_MAX_TOT_F_CARGO
-            obs["total_per_player_factory_water_unbounded"][p] += cargo["water"] / EXP_MAX_TOT_F_WATER
-            obs["total_per_player_factory_metal_unbounded"][p] += cargo["metal"] / EXP_MAX_TOT_F_METAL
-            obs["total_per_player_factory_power_unbounded"][p] += f["power"] / EXP_MAX_TOT_F_POWER
+            obs["player_has_factory"][pos] = 1
+            obs["player_factory_ice_unb"][pos] = cargo["ice"] / EXP_MAX_F_CARGO
+            obs["player_factory_ore_unb"][pos] = cargo["ore"] / EXP_MAX_F_CARGO
+            obs["player_factory_water_unb"][pos] = cargo["water"] / EXP_MAX_F_WATER
+            obs["player_factory_metal_unb"][pos] = cargo["metal"] / EXP_MAX_F_METAL
+            obs["player_factory_power_unb"][pos] = f["power"] / EXP_MAX_F_POWER
+            obs["player_tot_factory_ice_unb"][p] += cargo["ice"] / EXP_MAX_TOT_F_CARGO
+            obs["player_tot_factory_ore_unb"][p] += cargo["ore"] / EXP_MAX_TOT_F_CARGO
+            obs["player_tot_factory_water_unb"][p] += cargo["water"] / EXP_MAX_TOT_F_WATER
+            obs["player_tot_factory_metal_unb"][p] += cargo["metal"] / EXP_MAX_TOT_F_METAL
+            obs["player_tot_factory_power_unb"][p] += f["power"] / EXP_MAX_TOT_F_POWER
         for r in env_obs["units"][player].values():
             cargo = r["cargo"]
             pos = (p, r["pos"][0], r["pos"][1])
-            obs["tile_per_player_has_robot"][pos] = 1
-            obs["tile_per_player_has_light_robot"][pos] = r["unit_type"] == "LIGHT"
-            obs["tile_per_player_has_heavy_robot"][pos] = r["unit_type"] == "HEAVY"
-            obs["tile_per_player_light_robot_power"][pos] = r["power"] / LIGHT_BAT_CAP
-            obs["tile_per_player_light_robot_ice"][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
-            obs["tile_per_player_light_robot_ore"][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
-            obs["tile_per_player_heavy_robot_power"][pos] = r["power"] / HEAVY_BAT_CAP
-            obs["tile_per_player_heavy_robot_ice"][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
-            obs["tile_per_player_heavy_robot_ore"][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
-            obs["total_per_player_light_robots_unbounded"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "LIGHT")
-            obs["total_per_player_heavy_robots_unbounded"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "HEAVY")
-        obs["total_per_player_robots_unbounded"][p] += len(env_obs["units"][player]) / EXP_MAX_RS
-        obs["tile_per_player_has_lichen"][p] = env_obs["board"]["lichen_strains"] == lichen_strains[p]
-        obs["tile_per_player_lichen"][p] = (
+            obs["player_has_robot"][pos] = 1
+            obs["player_has_light_robot"][pos] = r["unit_type"] == "LIGHT"
+            obs["player_has_heavy_robot"][pos] = r["unit_type"] == "HEAVY"
+            obs["player_light_robot_power"][pos] = r["power"] / LIGHT_BAT_CAP
+            obs["player_light_robot_ice"][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
+            obs["player_light_robot_ore"][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
+            obs["player_heavy_robot_power"][pos] = r["power"] / HEAVY_BAT_CAP
+            obs["player_heavy_robot_ice"][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
+            obs["player_heavy_robot_ore"][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
+            obs["player_tot_light_robots_unb"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "LIGHT")
+            obs["player_tot_heavy_robots_unb"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "HEAVY")
+        obs["player_tot_robots_unb"][p] += len(env_obs["units"][player]) / EXP_MAX_RS
+        obs["player_has_lichen"][p] = env_obs["board"]["lichen_strains"] == lichen_strains[p]
+        obs["player_lichen"][p] = (
             env_obs["board"]["lichen"]
             / MAX_LICHEN
             * (env_obs["board"]["lichen_strains"] == lichen_strains[p])
         )
-        obs["total_per_player_lichen_unbounded"][p] = np.sum(obs["tile_per_player_lichen"][p])
+        obs["player_tot_lichen_unb"][p] = np.sum(obs["player_lichen"][p])
     game_is_day = env_obs["real_env_steps"] % CYCLE_LENGTH < DAY_LENGTH
     obs["game_is_day"][0] += game_is_day
     obs["game_day_or_night_elapsed"][0] += (
@@ -242,23 +242,23 @@ def get_obs_by_job(
 ) -> tuple[list[np.ndarray], list[np.ndarray]]:
     if job == "ice_miner":
         full_conv_obs = [
-            full_obs.tile_per_player_has_factory,
-            full_obs.tile_per_player_has_robot,
-            full_obs.tile_per_player_has_light_robot,
-            full_obs.tile_per_player_has_heavy_robot,
-            full_obs.tile_rubble,
-            full_obs.tile_per_player_light_robot_power,
-            full_obs.tile_per_player_heavy_robot_power,
-            full_obs.tile_per_player_factory_ice_unbounded,
-            full_obs.tile_per_player_factory_ore_unbounded,
-            full_obs.tile_per_player_factory_water_unbounded,
-            full_obs.tile_per_player_factory_metal_unbounded,
-            full_obs.tile_per_player_factory_power_unbounded,
+            full_obs.player_has_factory,
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            full_obs.rubble,
+            full_obs.player_light_robot_power,
+            full_obs.player_heavy_robot_power,
+            full_obs.player_factory_ice_unb,
+            full_obs.player_factory_ore_unb,
+            full_obs.player_factory_water_unb,
+            full_obs.player_factory_metal_unb,
+            full_obs.player_factory_power_unb,
             full_obs.game_is_day,
             full_obs.game_day_or_night_elapsed,
         ]
         full_skip_obs = [
-            full_obs.tile_has_ice,
+            full_obs.has_ice,
         ]
         return full_conv_obs, full_skip_obs
     else:
