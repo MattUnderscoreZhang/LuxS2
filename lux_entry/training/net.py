@@ -13,37 +13,33 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from lux_entry.training.env import UnitObsInfo
-from lux_entry.training.observations import jobs, get_obs_by_job
+from lux_entry.training.observations import jobs
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
+N_INPUTS = 59
+N_MINIMAPS_PER_INPUT = 4
 N_FEATURES = 64
 
 
 class JobFeaturesNet(nn.Module):
-    def __init__(self, job: str):
-        full_conv_obs, full_skip_obs = get_obs_by_job(_, job)
-        n_conv_channels = len(full_conv_obs) * 4
-        n_skip_channels = len(full_skip_obs) * 4
-        self.inception_1 = nn.Conv2d(n_conv_channels, 32, 1)  # TODO: make the nets have 1x1 conv only, since 12x12 maps are pretty small already
-        self.inception_3 = nn.Conv2d(n_conv_channels, 32, 3, padding='same')
-        self.inception_5 = nn.Conv2d(n_conv_channels, 32, 5, padding='same')
-        self.conv_reduction_layer = nn.Conv2d(96, 16, 3, stride=3)
-        self.skip_reduction_layer = nn.Conv2d(n_skip_channels, 16, 3, stride=3)
-        self.fc_layer= nn.Linear(32 * 4 * 4, N_FEATURES)
+    def __init__(self):
+        n_in_channels = N_INPUTS * N_MINIMAPS_PER_INPUT
+        self.per_pixel_branch = nn.Sequential(  # have branches operate identically on different minimap sizes
+            nn.Conv2d(n_in_channels, 512, 1),
+            nn.Tanh(),
+            nn.Conv2d(512, 64, 1),
+            nn.Tanh(),
+        )
+        self.conv_layer = nn.Conv2d(N_INPUTS + 64, 16, 3, stride=3)  # conv identically on different minimap sizes
+        self.fc_layer= nn.Linear(32 * 4 * 4, N_FEATURES)  # concat and flatten afterwards
 
-    def forward(self, obs: dict[str, Tensor]) -> Tensor:
-        conv_obs, skip_obs = obs["conv_obs"], obs["skip_obs"]
+    def forward(self, obs: Tensor) -> Tensor:
         x = torch.cat([
-            self.inception_1(conv_obs),
-            self.inception_3(conv_obs),
-            self.inception_5(conv_obs),
+            obs,
+            self.per_pixel_branch(obs),
         ], dim=1)
         x = torch.tanh(x)
-        x = torch.cat([
-            self.conv_reduction_layer(x),
-            self.skip_reduction_layer(skip_obs),
-        ], dim=1)
         x = x.view(x.size(0), -1)
         x = self.fc_layer(x)
         x = torch.tanh(x)
@@ -85,7 +81,7 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int):
         super().__init__(observation_space, features_dim)
         self.features_nets = {
-            job: JobFeaturesNet(job)
+            job: JobFeaturesNet()
             for job in jobs
         }
         for job, net in self.features_nets.items():
@@ -93,11 +89,10 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
 
     def forward(self, obs: dict[str, UnitObsInfo]) -> dict[str, Tensor]:
         unit_features = {
-            unit_id: self.features_nets[job](conv_obs, skip_obs)
+            unit_id: self.features_nets[job](mini_obs)
             for unit_id, unit_obs in obs.items()
             if (job := str(unit_obs["job"]))
-            and (conv_obs := Tensor(unit_obs["conv_obs"]))
-            and (skip_obs := Tensor(unit_obs["skip_obs"]))
+            and (mini_obs := Tensor(unit_obs["mini_obs"]))
         }
         return unit_features
 

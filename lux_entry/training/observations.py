@@ -18,7 +18,6 @@ class MapFeaturesObservation:
     # binary yes/no
     has_ice: np.ndarray
     has_ore: np.ndarray
-    has_lichen_strain: np.ndarray
     player_has_factory: np.ndarray
     player_has_robot: np.ndarray
     player_has_light_robot: np.ndarray
@@ -27,12 +26,10 @@ class MapFeaturesObservation:
     # normalized from 0-1, -1 means inapplicable
     rubble: np.ndarray
     player_lichen: np.ndarray
-    player_light_robot_power: np.ndarray
-    player_light_robot_ice: np.ndarray
-    player_light_robot_ore: np.ndarray
-    player_heavy_robot_power: np.ndarray
-    player_heavy_robot_ice: np.ndarray
-    player_heavy_robot_ore: np.ndarray
+    player_robot_power: np.ndarray
+    player_robot_ice: np.ndarray
+    player_robot_ore: np.ndarray
+    player_robot_cargo: np.ndarray
     # normalized and positive unb, -1 means inapplicable
     player_factory_ice_unb: np.ndarray
     player_factory_ore_unb: np.ndarray
@@ -72,8 +69,6 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
         n_features = (
             2
             if "player_" in key
-            else 2 * env_cfg.MAX_FACTORIES
-            if key == "has_lichen_strain"
             else 1
         )
         low = (
@@ -134,8 +129,6 @@ def get_full_obs(
     # fill in observations
     obs["has_ice"][0] = env_obs["board"]["ice"]
     obs["has_ore"][0] = env_obs["board"]["ore"]
-    for i in range(2 * env_cfg.MAX_FACTORIES):
-        obs["has_lichen_strain"][i] = env_obs["board"]["lichen_strains"] == i
     obs["rubble"][0] = env_obs["board"]["rubble"] / MAX_RUBBLE
     lichen_strains = [[], []]
     for p, player in enumerate([player, opponent]):
@@ -158,16 +151,20 @@ def get_full_obs(
             cargo = r["cargo"]
             pos = (p, r["pos"][0], r["pos"][1])
             obs["player_has_robot"][pos] = 1
-            obs["player_has_light_robot"][pos] = r["unit_type"] == "LIGHT"
-            obs["player_has_heavy_robot"][pos] = r["unit_type"] == "HEAVY"
-            obs["player_light_robot_power"][pos] = r["power"] / LIGHT_BAT_CAP
-            obs["player_light_robot_ice"][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
-            obs["player_light_robot_ore"][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
-            obs["player_heavy_robot_power"][pos] = r["power"] / HEAVY_BAT_CAP
-            obs["player_heavy_robot_ice"][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
-            obs["player_heavy_robot_ore"][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
-            obs["player_tot_light_robots_unb"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "LIGHT")
-            obs["player_tot_heavy_robots_unb"][p] += 1 / EXP_MAX_RS * (r["unit_type"] == "HEAVY")
+            if r["unit_type"] == "LIGHT":
+                obs["player_has_light_robot"][pos] = 1
+                obs["player_robot_power"][pos] = r["power"] / LIGHT_BAT_CAP
+                obs["player_robot_ice"][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
+                obs["player_robot_ore"][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
+                obs["player_robot_cargo"][pos] = (cargo["ice"] + cargo["ore"]) / LIGHT_CARGO_SPACE
+                obs["player_tot_light_robots_unb"][p] += 1 / EXP_MAX_RS
+            elif r["unit_type"] == "HEAVY":
+                obs["player_has_heavy_robot"][pos] = 1
+                obs["player_robot_power"][pos] = r["power"] / HEAVY_BAT_CAP
+                obs["player_robot_ice"][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
+                obs["player_robot_ore"][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
+                obs["player_robot_cargo"][pos] = (cargo["ice"] + cargo["ore"]) / HEAVY_CARGO_SPACE
+                obs["player_tot_heavy_robots_unb"][p] += 1 / EXP_MAX_RS
         obs["player_tot_robots_unb"][p] += len(env_obs["units"][player]) / EXP_MAX_RS
         obs["player_has_lichen"][p] = env_obs["board"]["lichen_strains"] == lichen_strains[p]
         obs["player_lichen"][p] = (
@@ -192,13 +189,9 @@ def get_full_obs(
     return MapFeaturesObservation(**obs)
 
 
-def get_minimap_obs(
-    full_conv_obs: list[np.ndarray], full_skip_obs: list[np.ndarray], pos: np.ndarray
-) -> dict[str, torch.Tensor]:
+def get_minimap_obs(full_obs: list[np.ndarray], pos: np.ndarray) -> torch.Tensor:
     """
     Create minimaps for a set of features around (x, y).
-    Conv obs are ones which will be convoluted together to extract high-level features.
-    Skip obs are used directly by the agent without alteration.
     """
     def _mean_pool(arr: np.ndarray, window: int) -> np.ndarray:
         arr = arr.reshape(
@@ -211,7 +204,7 @@ def get_minimap_obs(
         minimap = np.zeros((value.shape[0] * 4, 12, 12))
         for p in range(value.shape[0]):
             # unit is in lower right pixel of upper left quadrant
-            expanded_map[p][x : x + 48, y : y + 48] = value[p]
+            expanded_map[p][x : x + 48, y : y + 48] = value[p]  # TODO: group minimap sizes better
             # small map (12x12 area)
             minimap[p * 4] = expanded_map[p][42:54, 42:54]
             # medium map (24x24 area)
@@ -228,13 +221,8 @@ def get_minimap_obs(
         )
         return minimap
 
-    conv_obs = [_get_minimap(value, pos[0], pos[1]) for value in full_conv_obs]
-    skip_obs = [_get_minimap(value, pos[0], pos[1]) for value in full_skip_obs]
-
-    return {
-        "conv_obs": torch.cat([torch.from_numpy(obs) for obs in conv_obs], dim=0),
-        "skip_obs": torch.cat([torch.from_numpy(obs) for obs in skip_obs], dim=0),
-    }
+    mini_obs = [_get_minimap(value, pos[0], pos[1]) for value in full_obs]
+    return torch.cat([torch.from_numpy(obs) for obs in mini_obs], dim=0)
 
 
 jobs = [
@@ -243,135 +231,70 @@ jobs = [
     "courier",
     "sabateur",
     "soldier",
+    "general",
     "factory",
 ]
-
-"""
-units_obs = [
-    full_obs.player_has_robot,
-    full_obs.player_has_light_robot,
-    full_obs.player_has_heavy_robot,
-    full_obs.player_light_robot_power,
-    full_obs.player_heavy_robot_power,
-    full_obs.player_tot_robots_unb,
-    full_obs.player_tot_light_robots_unb,
-    full_obs.player_tot_heavy_robots_unb,
-]
-time_obs = [
-    full_obs.game_is_day,
-    full_obs.game_day_or_night_elapsed,
-    full_obs.game_time_elapsed,
-]
-map_factory_obs = [
-    full_obs.player_has_factory,
-]
-factory_ice_obs = [
-    full_obs.player_factory_ice_unb,
-    full_obs.player_factory_water_unb,
-    full_obs.player_tot_factory_ice_unb,
-    full_obs.player_tot_factory_water_unb,
-]
-factory_ore_obs = [
-    full_obs.player_factory_ore_unb,
-    full_obs.player_factory_metal_unb,
-    full_obs.player_tot_factory_ore_unb,
-    full_obs.player_tot_factory_metal_unb,
-]
-factory_power_obs = [
-    full_obs.player_factory_power_unb,
-    full_obs.player_tot_factory_power_unb,
-]
-cargo_obs = [
-    full_obs.player_light_robot_ice,
-    full_obs.player_light_robot_ore,
-    full_obs.player_heavy_robot_ice,
-    full_obs.player_heavy_robot_ore,
-]
-map_ice_obs = [
-    full_obs.has_ice,
-]
-map_ore_obs = [
-    full_obs.has_ore,
-]
-map_rubble_obs = [
-    full_obs.rubble,
-]
-lichen_obs = [
-    full_obs.has_lichen_strain,
-    full_obs.player_has_lichen,
-    full_obs.player_lichen,
-    full_obs.player_tot_lichen_unb,
-]
-bidding_obs = [
-    full_obs.teams,
-    full_obs.factories_per_team,
-    full_obs.player_tot_factories_unb,
-    full_obs.valid_spawns_mask,
-]
-"""
 
 
 def get_obs_by_job(
     full_obs: MapFeaturesObservation,
     job: str
-) -> tuple[list[np.ndarray], list[np.ndarray]]:
+) -> list[np.ndarray]:
+    """
+    Only using 'general' for all jobs at the moment.
+    """
     if job == "ice_miner":
-        full_conv_obs = [
+        obs = [
+            # where ice is
+            full_obs.has_ice,
             # best factory to send ice
+            full_obs.player_has_factory[0],
             full_obs.player_factory_ice_unb[0],
             full_obs.player_factory_water_unb[0],
             # power info
-            np.add(full_obs.player_light_robot_power[0], full_obs.player_heavy_robot_power[0]),
+            full_obs.player_robot_power[0],
             full_obs.player_factory_power_unb[0],
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-            # other robots
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            # navigation
-            full_obs.rubble,
-        ]
-        full_skip_obs = [
-            # where ice is
-            full_obs.has_ice,
-            # cargo status
-            np.add(full_obs.player_light_robot_ice[0], full_obs.player_heavy_robot_ice[0]),
-            # where factories are
-            full_obs.player_has_factory[0],
-        ]
-    elif job == "ore_miner":
-        full_conv_obs = [
-            # best factory to send ore
-            full_obs.player_factory_ore_unb[0],
-            full_obs.player_factory_metal_unb[0],
-            # power info
-            np.add(full_obs.player_light_robot_power[0], full_obs.player_heavy_robot_power[0]),
-            full_obs.player_factory_power_unb[0],
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-            # other robots
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            # navigation
-            full_obs.rubble,
-        ]
-        full_skip_obs = [
-            # where ore is
-            full_obs.has_ore,
-            # cargo status
-            np.add(full_obs.player_light_robot_ore[0], full_obs.player_heavy_robot_ore[0]),
-            # where factories are
-            full_obs.player_has_factory[0],
-        ]
-    elif job == "courier":
-        full_conv_obs = [
             # time info
             full_obs.game_is_day,
             full_obs.game_day_or_night_elapsed,
+            # other robots
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            # navigation
+            full_obs.rubble,
+            # cargo status
+            full_obs.player_robot_ice[0],
+            full_obs.player_robot_ore[0],
+            full_obs.player_robot_cargo[0],
         ]
-        full_skip_obs = [
+    elif job == "ore_miner":
+        obs = [
+            # where ore is
+            full_obs.has_ore,
+            # best factory to send ore
+            full_obs.player_has_factory[0],
+            full_obs.player_factory_ore_unb[0],
+            full_obs.player_factory_metal_unb[0],
+            # power info
+            full_obs.player_robot_power[0],
+            full_obs.player_factory_power_unb[0],
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+            # other robots
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            # navigation
+            full_obs.rubble,
+            # cargo status
+            full_obs.player_robot_ice[0],
+            full_obs.player_robot_ore[0],
+            full_obs.player_robot_cargo[0],
+        ]
+    elif job == "courier":
+        obs = [
             # my factories and what they have
             full_obs.player_has_factory[0],
             full_obs.player_factory_ice_unb[0],
@@ -379,18 +302,23 @@ def get_obs_by_job(
             full_obs.player_factory_ore_unb[0],
             full_obs.player_factory_metal_unb[0],
             full_obs.player_factory_power_unb[0],
-            # where other robots are, and what my robots have
+            # where other robots are
             full_obs.player_has_robot,
             full_obs.player_has_light_robot,
             full_obs.player_has_heavy_robot,
-            np.add(full_obs.player_light_robot_power[0], full_obs.player_heavy_robot_power[0]),
-            np.add(full_obs.player_light_robot_ice[0], full_obs.player_heavy_robot_ice[0]),
-            np.add(full_obs.player_light_robot_ore[0], full_obs.player_heavy_robot_ore[0]),
+            # what my robots have
+            full_obs.player_robot_power[0],
+            full_obs.player_robot_ice[0],
+            full_obs.player_robot_ore[0],
+            full_obs.player_robot_cargo[0],
             # navigation
             full_obs.rubble,
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
         ]
     elif job == "sabateur":
-        full_conv_obs = [
+        obs = [
             # enemy factories and what they have
             full_obs.player_has_factory[1],
             full_obs.player_factory_ice_unb[1],
@@ -398,53 +326,85 @@ def get_obs_by_job(
             full_obs.player_factory_ore_unb[1],
             full_obs.player_factory_metal_unb[1],
             full_obs.player_factory_power_unb[1],
-            # where other robots are, and what they have
+            # where other robots are
             full_obs.player_has_robot,
             full_obs.player_has_light_robot,
             full_obs.player_has_heavy_robot,
-            np.add(full_obs.player_light_robot_power, full_obs.player_heavy_robot_power),
-            np.add(full_obs.player_light_robot_ice, full_obs.player_heavy_robot_ice),
-            np.add(full_obs.player_light_robot_ore, full_obs.player_heavy_robot_ore),
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-        ]
-        full_skip_obs = [
+            full_obs.player_robot_power,
             # navigation
             full_obs.rubble,
             # where lichen is
             full_obs.player_has_lichen,
             full_obs.player_lichen,
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
         ]
     elif job == "soldier":
-        full_conv_obs = [
-            # enemy factories and what they have
-            full_obs.player_has_factory[1],
-            full_obs.player_factory_ice_unb[1],
-            full_obs.player_factory_water_unb[1],
-            full_obs.player_factory_ore_unb[1],
-            full_obs.player_factory_metal_unb[1],
-            full_obs.player_factory_power_unb[1],
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
+        obs = [
+            # factories and what they have
+            full_obs.player_has_factory,
+            full_obs.player_factory_ice_unb,
+            full_obs.player_factory_water_unb,
+            full_obs.player_factory_ore_unb,
+            full_obs.player_factory_metal_unb,
+            full_obs.player_factory_power_unb,
             # navigation
             full_obs.rubble,
             # where lichen is
             full_obs.player_has_lichen,
             full_obs.player_lichen,
-        ]
-        full_skip_obs = [
             # where other robots are, and what they have
             full_obs.player_has_robot,
             full_obs.player_has_light_robot,
             full_obs.player_has_heavy_robot,
-            np.add(full_obs.player_light_robot_power, full_obs.player_heavy_robot_power),
-            np.add(full_obs.player_light_robot_ice, full_obs.player_heavy_robot_ice),
-            np.add(full_obs.player_light_robot_ore, full_obs.player_heavy_robot_ore),
+            full_obs.player_robot_power,
+            full_obs.player_robot_ice,
+            full_obs.player_robot_ore,
+            full_obs.player_robot_cargo,
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+        ]
+    elif job == "general":
+        obs = [
+            full_obs.has_ice,
+            full_obs.has_ore,
+            full_obs.player_has_factory,
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            full_obs.player_has_lichen,
+            full_obs.rubble,
+            full_obs.player_lichen,
+            full_obs.player_robot_power,
+            full_obs.player_robot_ice,
+            full_obs.player_robot_ore,
+            full_obs.player_robot_cargo,
+            full_obs.player_factory_ice_unb,
+            full_obs.player_factory_ore_unb,
+            full_obs.player_factory_water_unb,
+            full_obs.player_factory_metal_unb,
+            full_obs.player_factory_power_unb,
+            full_obs.player_tot_robots_unb,
+            full_obs.player_tot_light_robots_unb,
+            full_obs.player_tot_heavy_robots_unb,
+            full_obs.player_tot_factories_unb,
+            full_obs.player_tot_factory_ice_unb,
+            full_obs.player_tot_factory_ore_unb,
+            full_obs.player_tot_factory_water_unb,
+            full_obs.player_tot_factory_metal_unb,
+            full_obs.player_tot_factory_power_unb,
+            full_obs.player_tot_lichen_unb,
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+            full_obs.game_time_elapsed,
+            full_obs.teams,
+            full_obs.factories_per_team,
+            full_obs.valid_spawns_mask,
         ]
     elif job == "factory":
-        full_conv_obs = [
+        obs = [
             # where robots are
             full_obs.player_has_robot,
             full_obs.player_has_light_robot,
@@ -468,8 +428,6 @@ def get_obs_by_job(
             # where lichen is
             full_obs.player_has_lichen,
             full_obs.player_lichen,
-        ]
-        full_skip_obs = [
             # per-player total values
             full_obs.player_tot_robots_unb,
             full_obs.player_tot_light_robots_unb,
@@ -483,4 +441,4 @@ def get_obs_by_job(
         ]
     else:
         raise ValueError(f"Unknown unit job: {job}")
-    return full_conv_obs, full_skip_obs
+    return obs

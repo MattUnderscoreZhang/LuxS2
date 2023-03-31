@@ -193,20 +193,18 @@ class ObservationWrapper(gym.ObservationWrapper):
         assert full_obs.has_ice.shape == (1, 48, 48)
 
         units = obs["units"][self.player]
-        # TODO: calculate unit jobs
         unit_jobs = {
-            unit_info["unit_id"]: "ice_miner"
+            unit_info["unit_id"]: "general"  # TODO: calculate unit jobs
             for unit_info in units.values()
         }
         minimap_obs = {}
         for unit_info in units.values():
             unit_id = unit_info["unit_id"]
-            full_conv_obs, full_skip_obs = get_obs_by_job(full_obs, unit_jobs[unit_id])
-            conv_obs, skip_obs = get_minimap_obs(full_conv_obs, full_skip_obs, unit_info["pos"])  # TODO: split responsibilities between this and JobFeaturesNet in net.py
+            full_obs_subset = get_obs_by_job(full_obs, unit_jobs[unit_id])
+            mini_obs = get_minimap_obs(full_obs_subset, unit_info["pos"])
             minimap_obs[unit_id] = {
                 "job": unit_jobs[unit_id],
-                "conv_obs": torch.from_numpy(conv_obs).float(),
-                "skip_obs": torch.from_numpy(skip_obs).float(),
+                "mini_obs": torch.from_numpy(mini_obs).float(),
             }
         return minimap_obs
 
