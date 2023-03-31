@@ -242,9 +242,7 @@ jobs = [
     "ore_miner",
     "courier",
     "sabateur",
-    "scout",
     "soldier",
-    "builder",
     "factory",
 ]
 
@@ -329,8 +327,8 @@ def get_obs_by_job(
             full_obs.game_day_or_night_elapsed,
             # other robots
             full_obs.player_has_robot,
-            full_obs.player_has_light_robot[0],
-            full_obs.player_has_heavy_robot[0],
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
             # navigation
             full_obs.rubble,
         ]
@@ -354,8 +352,8 @@ def get_obs_by_job(
             full_obs.game_day_or_night_elapsed,
             # other robots
             full_obs.player_has_robot,
-            full_obs.player_has_light_robot[0],
-            full_obs.player_has_heavy_robot[0],
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
             # navigation
             full_obs.rubble,
         ]
@@ -368,17 +366,121 @@ def get_obs_by_job(
             full_obs.player_has_factory[0],
         ]
     elif job == "courier":
-        ...
+        full_conv_obs = [
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+        ]
+        full_skip_obs = [
+            # my factories and what they have
+            full_obs.player_has_factory[0],
+            full_obs.player_factory_ice_unb[0],
+            full_obs.player_factory_water_unb[0],
+            full_obs.player_factory_ore_unb[0],
+            full_obs.player_factory_metal_unb[0],
+            full_obs.player_factory_power_unb[0],
+            # where other robots are, and what my robots have
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            np.add(full_obs.player_light_robot_power[0], full_obs.player_heavy_robot_power[0]),
+            np.add(full_obs.player_light_robot_ice[0], full_obs.player_heavy_robot_ice[0]),
+            np.add(full_obs.player_light_robot_ore[0], full_obs.player_heavy_robot_ore[0]),
+            # navigation
+            full_obs.rubble,
+        ]
     elif job == "sabateur":
-        ...
-    elif job == "scout":
-        ...
+        full_conv_obs = [
+            # enemy factories and what they have
+            full_obs.player_has_factory[1],
+            full_obs.player_factory_ice_unb[1],
+            full_obs.player_factory_water_unb[1],
+            full_obs.player_factory_ore_unb[1],
+            full_obs.player_factory_metal_unb[1],
+            full_obs.player_factory_power_unb[1],
+            # where other robots are, and what they have
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            np.add(full_obs.player_light_robot_power, full_obs.player_heavy_robot_power),
+            np.add(full_obs.player_light_robot_ice, full_obs.player_heavy_robot_ice),
+            np.add(full_obs.player_light_robot_ore, full_obs.player_heavy_robot_ore),
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+        ]
+        full_skip_obs = [
+            # navigation
+            full_obs.rubble,
+            # where lichen is
+            full_obs.player_has_lichen,
+            full_obs.player_lichen,
+        ]
     elif job == "soldier":
-        ...
-    elif job == "builder":
-        ...
+        full_conv_obs = [
+            # enemy factories and what they have
+            full_obs.player_has_factory[1],
+            full_obs.player_factory_ice_unb[1],
+            full_obs.player_factory_water_unb[1],
+            full_obs.player_factory_ore_unb[1],
+            full_obs.player_factory_metal_unb[1],
+            full_obs.player_factory_power_unb[1],
+            # time info
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+            # navigation
+            full_obs.rubble,
+            # where lichen is
+            full_obs.player_has_lichen,
+            full_obs.player_lichen,
+        ]
+        full_skip_obs = [
+            # where other robots are, and what they have
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            np.add(full_obs.player_light_robot_power, full_obs.player_heavy_robot_power),
+            np.add(full_obs.player_light_robot_ice, full_obs.player_heavy_robot_ice),
+            np.add(full_obs.player_light_robot_ore, full_obs.player_heavy_robot_ore),
+        ]
     elif job == "factory":
-        ...
+        full_conv_obs = [
+            # where robots are
+            full_obs.player_has_robot,
+            full_obs.player_has_light_robot,
+            full_obs.player_has_heavy_robot,
+            # game state
+            full_obs.game_is_day,
+            full_obs.game_day_or_night_elapsed,
+            full_obs.game_time_elapsed,
+            # where factories are
+            full_obs.player_has_factory,
+            # factory resources
+            full_obs.player_factory_ice_unb,
+            full_obs.player_factory_water_unb,
+            full_obs.player_factory_ore_unb,
+            full_obs.player_factory_metal_unb,
+            full_obs.player_factory_power_unb,
+            # where map resources are
+            full_obs.has_ice,
+            full_obs.has_ore,
+            full_obs.rubble,
+            # where lichen is
+            full_obs.player_has_lichen,
+            full_obs.player_lichen,
+        ]
+        full_skip_obs = [
+            # per-player total values
+            full_obs.player_tot_robots_unb,
+            full_obs.player_tot_light_robots_unb,
+            full_obs.player_tot_heavy_robots_unb,
+            full_obs.player_tot_factory_ice_unb,
+            full_obs.player_tot_factory_water_unb,
+            full_obs.player_tot_factory_ore_unb,
+            full_obs.player_tot_factory_metal_unb,
+            full_obs.player_tot_factory_power_unb,
+            full_obs.player_tot_lichen_unb,
+        ]
     else:
         raise ValueError(f"Unknown unit job: {job}")
     return full_conv_obs, full_skip_obs

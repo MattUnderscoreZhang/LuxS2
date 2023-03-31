@@ -25,7 +25,7 @@ class JobFeaturesNet(nn.Module):
         full_conv_obs, full_skip_obs = get_obs_by_job(_, job)
         n_conv_channels = len(full_conv_obs) * 4
         n_skip_channels = len(full_skip_obs) * 4
-        self.inception_1 = nn.Conv2d(n_conv_channels, 32, 1)
+        self.inception_1 = nn.Conv2d(n_conv_channels, 32, 1)  # TODO: make the nets have 1x1 conv only, since 12x12 maps are pretty small already
         self.inception_3 = nn.Conv2d(n_conv_channels, 32, 3, padding='same')
         self.inception_5 = nn.Conv2d(n_conv_channels, 32, 5, padding='same')
         self.conv_reduction_layer = nn.Conv2d(96, 16, 3, stride=3)
