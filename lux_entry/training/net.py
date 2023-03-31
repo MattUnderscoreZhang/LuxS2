@@ -5,14 +5,15 @@ from luxai_s2.map_generator.generator import argparse
 import torch
 from torch import nn
 from torch.functional import Tensor
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from lux_entry.training.observations import get_obs_by_job
+from lux_entry.training.env import UnitObsInfo
+from lux_entry.training.observations import jobs, get_obs_by_job
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
@@ -83,16 +84,6 @@ class JobFeaturesNet(nn.Module):
 class UnitsFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int):
         super().__init__(observation_space, features_dim)
-        jobs = [
-            "ice_miner",
-            "ore_miner",
-            "courier",
-            "sabateur",
-            "scout",
-            "soldier",
-            "builder",
-            "factory",
-        ]
         self.features_nets = {
             job: JobFeaturesNet(job)
             for job in jobs
@@ -100,7 +91,7 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         for job, net in self.features_nets.items():
             self.add_module(job, net)
 
-    def forward(self, obs: dict[str, dict[str, Union[str, Tensor]]]) -> dict[str, Tensor]:
+    def forward(self, obs: dict[str, UnitObsInfo]) -> dict[str, Tensor]:
         unit_features = {
             unit_id: self.features_nets[job](conv_obs, skip_obs)
             for unit_id, unit_obs in obs.items()

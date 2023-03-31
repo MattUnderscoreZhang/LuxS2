@@ -47,7 +47,7 @@ def make_env(
         )
         env = SolitaireWrapper(env, "player_0")
         env = ObservationWrapper(env, "player_0")
-        env = TrainingWrapper(env)
+        env = TrainingWrapper(env, "player_0")
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -130,7 +130,7 @@ class BaseWrapper(gym.Wrapper):
             player_actions = dict()
             for agent in self.env.agents:
                 if my_turn_to_place_factory(
-                    obs["player_0"]["teams"][agent]["place_first"],
+                    obs["player_0"]["teams"][agent]["place_first"],  # TODO: make sure this is alternating players
                     self.env.state.env_steps,
                 ):
                     player_actions[agent] = self.factory_placement_policy(
@@ -169,6 +169,9 @@ class SolitaireWrapper(gym.Wrapper):
         return obs[self.player]
 
 
+UnitObsInfo = dict[str, Union[str, torch.Tensor]]
+
+
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, player: Player) -> None:
         super().__init__(env)
@@ -178,15 +181,16 @@ class ObservationWrapper(gym.ObservationWrapper):
             "skip_obs":spaces.Box(-999, 999, shape=(4, 12, 12)),
         })
         self.player = player
+        self.opponent = "player_1" if player == "player_0" else "player_0"
 
     def observation(
         self, obs: ObservationStateDict
-    ) -> dict[str, dict[str, Union[str, torch.Tensor]]]:
+    ) -> dict[str, UnitObsInfo]:
         """
         Get minimaps for each unit based on what it needs to know for its job.
         """
-        full_obs = get_full_obs(obs, self.env_cfg)
-        assert full_obs.tile_has_ice.shape == (1, 48, 48)
+        full_obs = get_full_obs(obs, self.env_cfg, self.player, self.opponent)
+        assert full_obs.has_ice.shape == (1, 48, 48)
 
         units = obs["units"][self.player]
         # TODO: calculate unit jobs
@@ -198,7 +202,7 @@ class ObservationWrapper(gym.ObservationWrapper):
         for unit_info in units.values():
             unit_id = unit_info["unit_id"]
             full_conv_obs, full_skip_obs = get_obs_by_job(full_obs, unit_jobs[unit_id])
-            conv_obs, skip_obs = get_minimap_obs(full_conv_obs, full_skip_obs, unit_info["pos"])
+            conv_obs, skip_obs = get_minimap_obs(full_conv_obs, full_skip_obs, unit_info["pos"])  # TODO: split responsibilities between this and JobFeaturesNet in net.py
             minimap_obs[unit_id] = {
                 "job": unit_jobs[unit_id],
                 "conv_obs": torch.from_numpy(conv_obs).float(),
@@ -208,14 +212,14 @@ class ObservationWrapper(gym.ObservationWrapper):
 
 
 class TrainingWrapper(gym.Wrapper):
-    def __init__(self, env: gym.Env) -> None:
+    def __init__(self, env: gym.Env, player: Player) -> None:
         """
         Alters the environment between steps for training purposes.
         """
         super().__init__(env)
         self.prev_step_metrics = None
-        self.player = "player_0"
-        self.opp_player = "player_1"
+        self.player = player
+        self.opponent = "player_1" if player == "player_0" else "player_0"
 
     def step(self, action: np.ndarray):
         """
