@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from typing import get_type_hints
 
-from luxai_s2.state.state import ObservationStateDict, Team
+from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
@@ -54,12 +54,6 @@ class MapFeaturesObservation:
     game_is_day: np.ndarray
     game_day_or_night_elapsed: np.ndarray
     game_time_elapsed: np.ndarray
-    """
-    bidding and factory placement info
-    """
-    teams: dict[str, Team]  # not broadcast
-    factories_per_team: int  # not broadcast
-    valid_spawns_mask: np.ndarray
 
 
 def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
@@ -80,10 +74,6 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
         spaces_dict[key] = (
             spaces.MultiBinary((n_features, map_size, map_size))
             if "has_" in key or "is_" in key
-            else spaces.Dict()
-            if key == "teams"
-            else int
-            if key == "factories_per_team"
             else spaces.Box(low, high, shape=(n_features, map_size, map_size))
         )
     assert spaces_dict.keys() == get_type_hints(MapFeaturesObservation).keys()
@@ -123,7 +113,6 @@ def get_full_obs(
         if type(value) == spaces.MultiBinary
         else np.zeros(value.shape) + value.low[0]
         for key, value in observation_space.items()
-        if key not in ["teams", "factories_per_team"]
     }
 
     # fill in observations
@@ -182,9 +171,6 @@ def get_full_obs(
         / (CYCLE_LENGTH - DAY_LENGTH)
     )
     obs["game_time_elapsed"][0] += env_obs["real_env_steps"] / MAX_EPISODE_LENGTH
-    obs["teams"] = env_obs["teams"]
-    obs["factories_per_team"] = env_obs["board"]["factories_per_team"]
-    obs["valid_spawns_mask"][0] = env_obs["board"]["valid_spawns_mask"]
 
     return MapFeaturesObservation(**obs)
 
@@ -199,12 +185,12 @@ def get_minimap_obs(full_obs: list[np.ndarray], pos: np.ndarray) -> torch.Tensor
         )
         return np.mean(arr, axis=(1, 3))
 
-    def _get_minimap(value: np.ndarray, x: int, y: int) -> np.ndarray:
-        expanded_map = np.full((value.shape[0], 96, 96), -1.0)
-        minimap = np.zeros((value.shape[0] * 4, 12, 12))
-        for p in range(value.shape[0]):
+    def _get_minimap(obs: np.ndarray, x: int, y: int) -> np.ndarray:
+        expanded_map = np.full((obs.shape[0], 96, 96), -1.0)
+        minimap = np.zeros((obs.shape[0] * 4, 12, 12))
+        for p in range(obs.shape[0]):
             # unit is in lower right pixel of upper left quadrant
-            expanded_map[p][x : x + 48, y : y + 48] = value[p]  # TODO: group minimap sizes better
+            expanded_map[p][x : x + 48, y : y + 48] = obs[p]  # TODO: group minimap sizes better
             # small map (12x12 area)
             minimap[p * 4] = expanded_map[p][42:54, 42:54]
             # medium map (24x24 area)
@@ -221,8 +207,8 @@ def get_minimap_obs(full_obs: list[np.ndarray], pos: np.ndarray) -> torch.Tensor
         )
         return minimap
 
-    mini_obs = [_get_minimap(value, pos[0], pos[1]) for value in full_obs]
-    return torch.cat([torch.from_numpy(obs) for obs in mini_obs], dim=0)
+    mini_obs = [_get_minimap(obs, pos[0], pos[1]) for obs in full_obs]
+    return torch.cat([torch.from_numpy(obs).float() for obs in mini_obs], dim=0)
 
 
 jobs = [
@@ -399,9 +385,6 @@ def get_obs_by_job(
             full_obs.game_is_day,
             full_obs.game_day_or_night_elapsed,
             full_obs.game_time_elapsed,
-            full_obs.teams,
-            full_obs.factories_per_team,
-            full_obs.valid_spawns_mask,
         ]
     elif job == "factory":
         obs = [

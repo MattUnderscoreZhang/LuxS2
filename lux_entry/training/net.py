@@ -25,14 +25,15 @@ N_FEATURES = 64
 class JobFeaturesNet(nn.Module):
     def __init__(self):
         n_in_channels = N_INPUTS * N_MINIMAPS_PER_INPUT
-        self.per_pixel_branch = nn.Sequential(  # have branches operate identically on different minimap sizes
+        self.per_pixel_branch = nn.Sequential(  # TODO: have branches operate identically on different minimap sizes
             nn.Conv2d(n_in_channels, 512, 1),
             nn.Tanh(),
             nn.Conv2d(512, 64, 1),
             nn.Tanh(),
         )
-        self.conv_layer = nn.Conv2d(N_INPUTS + 64, 16, 3, stride=3)  # conv identically on different minimap sizes
-        self.fc_layer= nn.Linear(32 * 4 * 4, N_FEATURES)  # concat and flatten afterwards
+        # TODO: append original minimaps
+        self.conv_layer = nn.Conv2d(N_INPUTS + 64, 16, 3, stride=3)  # TODO: conv identically on different minimap sizes
+        self.fc_layer= nn.Linear(32 * 4 * 4, N_FEATURES)  # TODO: concat and flatten afterwards
 
     def forward(self, obs: Tensor) -> Tensor:
         x = torch.cat([

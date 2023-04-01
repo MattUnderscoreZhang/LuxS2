@@ -70,7 +70,7 @@ def main(args: argparse.Namespace):
     print("Training with args", args)
     if args.seed is not None:
         set_random_seed(args.seed)
-    env = SubprocVecEnv(
+    env = SubprocVecEnv(  # TODO: pass things like reward functions into make_env for each lesson in curriculum
         [
             make_env(i, max_episode_steps=args.max_episode_steps)
             for i in range(args.n_envs)
@@ -84,7 +84,7 @@ def main(args: argparse.Namespace):
         if args.continue_training:
             model = model.load(args.model_path)
             model.set_env(env)
-        train(args, model)
+        train(args, model)  # TODO: instead of setting up model and training once, set up models for each lesson in the curriculum
 
 
 if __name__ == "__main__":

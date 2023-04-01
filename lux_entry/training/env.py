@@ -94,18 +94,18 @@ class BaseWrapper(gym.Wrapper):
         The actions are fed to LuxAI_S2, which returns a transition for both players.
         """
         # here, for each player in the game we translate their action into a Lux S2 action
-        lux_action = dict()
+        lux_actions = dict()
         for player in self.env.agents:
             if player in player_actions:
                 assert self.prev_obs is not None
-                lux_action[player] = self.controller.action_to_lux_action(
+                lux_actions[player] = self.controller.action_to_lux_action(
                     player=player, obs=self.prev_obs[player], action=player_actions[player]
                 )
             else:
-                lux_action[player] = dict()
+                lux_actions[player] = dict()
 
-        # lux_action is now a dict mapping player name to an action, which is passed to LuxAI_S2
-        obs, reward, done, info = self.env.step(lux_action)
+        # lux_actions is now a dict mapping player name to an action, which is passed to LuxAI_S2
+        obs, reward, done, info = self.env.step(lux_actions)
         self.prev_obs = obs
         return obs, reward, done, info
 
@@ -204,7 +204,7 @@ class ObservationWrapper(gym.ObservationWrapper):
             mini_obs = get_minimap_obs(full_obs_subset, unit_info["pos"])
             minimap_obs[unit_id] = {
                 "job": unit_jobs[unit_id],
-                "mini_obs": torch.from_numpy(mini_obs).float(),
+                "mini_obs": mini_obs,
             }
         return minimap_obs
 
@@ -227,7 +227,7 @@ class TrainingWrapper(gym.Wrapper):
         Calculate reward and info, with info["metrics"] passed to Tensorboard in train.py.
         """
         # keep the enemy alive
-        for factory in self.env.state.factories[self.opp_player].values():
+        for factory in self.env.state.factories[self.opponent].values():
             factory.cargo.water = 1000
 
         # step
@@ -245,7 +245,7 @@ class TrainingWrapper(gym.Wrapper):
         info["metrics"] = metrics
 
         # calculate reward
-        reward = 0
+        reward = 0  # TODO: pass in reward calculation function during TrainingWrapper init
         if self.prev_step_metrics is not None:
             ice_dug_this_step = metrics["ice_dug"] - self.prev_step_metrics["ice_dug"]
             water_produced_this_step = (
