@@ -1,4 +1,5 @@
 from gym import spaces
+import numpy as np
 from os import path
 import sys
 from luxai_s2.map_generator.generator import argparse
@@ -12,12 +13,11 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from lux_entry.training.env import UnitObsInfo
-from lux_entry.training.observations import jobs
+from lux_entry.training.observations import get_minimap_obs
 
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
-N_INPUTS = 59
+N_INPUTS = 56
 N_MINIMAPS_PER_INPUT = 4
 N_FEATURES = 64
 
@@ -78,6 +78,16 @@ class JobFeaturesNet(nn.Module):
         self.load_state_dict(loaded_state_dict)
 
 
+jobs = [
+    "ice_miner",
+    "ore_miner",
+    "courier",
+    "sabateur",
+    "soldier",
+    "factory",
+]
+
+
 class UnitsFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int):
         super().__init__(observation_space, features_dim)
@@ -88,13 +98,26 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         for job, net in self.features_nets.items():
             self.add_module(job, net)
 
-    def forward(self, obs: dict[str, UnitObsInfo]) -> dict[str, Tensor]:
-        unit_features = {
-            unit_id: self.features_nets[job](mini_obs)
-            for unit_id, unit_obs in obs.items()
-            if (job := str(unit_obs["job"]))
-            and (mini_obs := Tensor(unit_obs["mini_obs"]))
-        }
+    def get_unit_jobs(self, unit_positions: np.ndarray) -> list[str]:
+        return [
+            "general"  # TODO: calculate unit jobs
+            for pos in unit_positions
+        ]
+
+    def forward(self, full_obs: dict[str, np.ndarray]) -> Tensor:
+        """
+        Use net for each unit based on its job.
+        """
+        unit_positions = np.argwhere(full_obs["player_has_robot"][0])
+        unit_jobs = self.get_unit_jobs(unit_positions)
+        minimap_obs = [
+            get_minimap_obs(full_obs, unit_position)
+            for unit_position in unit_positions
+        ]
+        unit_features = torch.cat([
+            self.features_nets[job](obs)
+            for job, obs in zip(unit_jobs, minimap_obs)
+        ], dim=1)
         return unit_features
 
 

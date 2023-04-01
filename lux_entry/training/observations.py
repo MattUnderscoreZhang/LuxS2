@@ -1,8 +1,6 @@
-from dataclasses import dataclass
 from gym import spaces
 import numpy as np
 import torch
-from typing import get_type_hints
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -10,64 +8,57 @@ from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 
 
-@dataclass
-class MapFeaturesObservation:
-    """
-    per map-tile features
-    """
+per_map_tile_obs_keys = [
     # binary yes/no
-    has_ice: np.ndarray
-    has_ore: np.ndarray
-    player_has_factory: np.ndarray
-    player_has_robot: np.ndarray
-    player_has_light_robot: np.ndarray
-    player_has_heavy_robot: np.ndarray
-    player_has_lichen: np.ndarray
+    "has_ice",
+    "has_ore",
+    "player_has_factory",
+    "player_has_robot",
+    "player_has_light_robot",
+    "player_has_heavy_robot",
+    "player_has_lichen",
     # normalized from 0-1, -1 means inapplicable
-    rubble: np.ndarray
-    player_lichen: np.ndarray
-    player_robot_power: np.ndarray
-    player_robot_ice: np.ndarray
-    player_robot_ore: np.ndarray
-    player_robot_cargo: np.ndarray
-    # normalized and positive unb, -1 means inapplicable
-    player_factory_ice_unb: np.ndarray
-    player_factory_ore_unb: np.ndarray
-    player_factory_water_unb: np.ndarray
-    player_factory_metal_unb: np.ndarray
-    player_factory_power_unb: np.ndarray
-    """
-    broadcast features
-    """
-    # normalized and positive unb
-    player_tot_robots_unb: np.ndarray
-    player_tot_light_robots_unb: np.ndarray
-    player_tot_heavy_robots_unb: np.ndarray
-    player_tot_factories_unb: np.ndarray
-    player_tot_factory_ice_unb: np.ndarray
-    player_tot_factory_ore_unb: np.ndarray
-    player_tot_factory_water_unb: np.ndarray
-    player_tot_factory_metal_unb: np.ndarray
-    player_tot_factory_power_unb: np.ndarray
-    player_tot_lichen_unb: np.ndarray
+    "rubble",
+    "player_lichen",
+    "player_robot_power",
+    "player_robot_ice",
+    "player_robot_ore",
+    "player_robot_cargo",
+    # normalized and positive unbound, -1 means inapplicable
+    "player_factory_ice_unb",
+    "player_factory_ore_unb",
+    "player_factory_water_unb",
+    "player_factory_metal_unb",
+    "player_factory_power_unb",
+]
+broadcast_obs_keys = [
+    # normalized and positive unbound
+    "player_tot_robots_unb",
+    "player_tot_light_robots_unb",
+    "player_tot_heavy_robots_unb",
+    "player_tot_factories_unb",
+    "player_tot_factory_ice_unb",
+    "player_tot_factory_ore_unb",
+    "player_tot_factory_water_unb",
+    "player_tot_factory_metal_unb",
+    "player_tot_factory_power_unb",
+    "player_tot_lichen_unb",
     # normalized from 0-1
-    game_is_day: np.ndarray
-    game_day_or_night_elapsed: np.ndarray
-    game_time_elapsed: np.ndarray
+    "game_is_day",
+    "game_day_or_night_elapsed",
+    "game_time_elapsed",
+]
+obs_keys = per_map_tile_obs_keys + broadcast_obs_keys
 
 
 def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
     map_size = env_cfg.map_size
     spaces_dict = spaces.Dict()
-    for key in get_type_hints(MapFeaturesObservation).keys():
-        n_features = (
-            2
-            if "player_" in key
-            else 1
-        )
+    for key in obs_keys:
+        n_features = 2 if "player_" in key else 1
         low = (
-            -1.0
-            if (("_robot_" in key or "_factory_" in key) and "total_" not in key)
+            -1.0  # not applicable (no robot or factory on tile)
+            if (("_robot_" in key or "_factory_" in key) and "_tot_" not in key)
             else 0.0
         )
         high = np.inf if "_unb" in key else 1.0
@@ -76,13 +67,12 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
             if "has_" in key or "is_" in key
             else spaces.Box(low, high, shape=(n_features, map_size, map_size))
         )
-    assert spaces_dict.keys() == get_type_hints(MapFeaturesObservation).keys()
     return spaces_dict
 
 
 def get_full_obs(
     env_obs: ObservationStateDict, env_cfg: EnvConfig, player: Player, opponent: Player,
-) -> MapFeaturesObservation:
+) -> dict[str, np.ndarray]:
     # normalization factors
     MAX_FS = env_cfg.MAX_FACTORIES
     MAX_RUBBLE = env_cfg.MAX_RUBBLE
@@ -123,14 +113,14 @@ def get_full_obs(
     for p, player in enumerate([player, opponent]):
         for f in env_obs["factories"][player].values():
             cargo = f["cargo"]
-            pos = (p, f["pos"][0], f["pos"][1])
+            p_pos = (p, f["pos"][0], f["pos"][1])
             lichen_strains[p].append(f["strain_id"])
-            obs["player_has_factory"][pos] = 1
-            obs["player_factory_ice_unb"][pos] = cargo["ice"] / EXP_MAX_F_CARGO
-            obs["player_factory_ore_unb"][pos] = cargo["ore"] / EXP_MAX_F_CARGO
-            obs["player_factory_water_unb"][pos] = cargo["water"] / EXP_MAX_F_WATER
-            obs["player_factory_metal_unb"][pos] = cargo["metal"] / EXP_MAX_F_METAL
-            obs["player_factory_power_unb"][pos] = f["power"] / EXP_MAX_F_POWER
+            obs["player_has_factory"][p_pos] = 1
+            obs["player_factory_ice_unb"][p_pos] = cargo["ice"] / EXP_MAX_F_CARGO
+            obs["player_factory_ore_unb"][p_pos] = cargo["ore"] / EXP_MAX_F_CARGO
+            obs["player_factory_water_unb"][p_pos] = cargo["water"] / EXP_MAX_F_WATER
+            obs["player_factory_metal_unb"][p_pos] = cargo["metal"] / EXP_MAX_F_METAL
+            obs["player_factory_power_unb"][p_pos] = f["power"] / EXP_MAX_F_POWER
             obs["player_tot_factory_ice_unb"][p] += cargo["ice"] / EXP_MAX_TOT_F_CARGO
             obs["player_tot_factory_ore_unb"][p] += cargo["ore"] / EXP_MAX_TOT_F_CARGO
             obs["player_tot_factory_water_unb"][p] += cargo["water"] / EXP_MAX_TOT_F_WATER
@@ -138,30 +128,29 @@ def get_full_obs(
             obs["player_tot_factory_power_unb"][p] += f["power"] / EXP_MAX_TOT_F_POWER
         for r in env_obs["units"][player].values():
             cargo = r["cargo"]
-            pos = (p, r["pos"][0], r["pos"][1])
-            obs["player_has_robot"][pos] = 1
+            p_pos = (p, r["pos"][0], r["pos"][1])
+            obs["player_has_robot"][p_pos] = 1
             if r["unit_type"] == "LIGHT":
-                obs["player_has_light_robot"][pos] = 1
-                obs["player_robot_power"][pos] = r["power"] / LIGHT_BAT_CAP
-                obs["player_robot_ice"][pos] = cargo["ice"] / LIGHT_CARGO_SPACE
-                obs["player_robot_ore"][pos] = cargo["ore"] / LIGHT_CARGO_SPACE
-                obs["player_robot_cargo"][pos] = (cargo["ice"] + cargo["ore"]) / LIGHT_CARGO_SPACE
+                obs["player_has_light_robot"][p_pos] = 1
+                obs["player_robot_power"][p_pos] = r["power"] / LIGHT_BAT_CAP
+                obs["player_robot_ice"][p_pos] = cargo["ice"] / LIGHT_CARGO_SPACE
+                obs["player_robot_ore"][p_pos] = cargo["ore"] / LIGHT_CARGO_SPACE
+                obs["player_robot_cargo"][p_pos] = (cargo["ice"] + cargo["ore"]) / LIGHT_CARGO_SPACE
                 obs["player_tot_light_robots_unb"][p] += 1 / EXP_MAX_RS
             elif r["unit_type"] == "HEAVY":
-                obs["player_has_heavy_robot"][pos] = 1
-                obs["player_robot_power"][pos] = r["power"] / HEAVY_BAT_CAP
-                obs["player_robot_ice"][pos] = cargo["ice"] / HEAVY_CARGO_SPACE
-                obs["player_robot_ore"][pos] = cargo["ore"] / HEAVY_CARGO_SPACE
-                obs["player_robot_cargo"][pos] = (cargo["ice"] + cargo["ore"]) / HEAVY_CARGO_SPACE
+                obs["player_has_heavy_robot"][p_pos] = 1
+                obs["player_robot_power"][p_pos] = r["power"] / HEAVY_BAT_CAP
+                obs["player_robot_ice"][p_pos] = cargo["ice"] / HEAVY_CARGO_SPACE
+                obs["player_robot_ore"][p_pos] = cargo["ore"] / HEAVY_CARGO_SPACE
+                obs["player_robot_cargo"][p_pos] = (cargo["ice"] + cargo["ore"]) / HEAVY_CARGO_SPACE
                 obs["player_tot_heavy_robots_unb"][p] += 1 / EXP_MAX_RS
         obs["player_tot_robots_unb"][p] += len(env_obs["units"][player]) / EXP_MAX_RS
         obs["player_has_lichen"][p] = env_obs["board"]["lichen_strains"] == lichen_strains[p]
         obs["player_lichen"][p] = (
-            env_obs["board"]["lichen"]
-            / MAX_LICHEN
+            env_obs["board"]["lichen"] / MAX_LICHEN
             * (env_obs["board"]["lichen_strains"] == lichen_strains[p])
         )
-        obs["player_tot_lichen_unb"][p] = np.sum(obs["player_lichen"][p])
+        obs["player_tot_lichen_unb"][p] += np.sum(obs["player_lichen"][p])
     game_is_day = env_obs["real_env_steps"] % CYCLE_LENGTH < DAY_LENGTH
     obs["game_is_day"][0] += game_is_day
     obs["game_day_or_night_elapsed"][0] += (
@@ -171,11 +160,13 @@ def get_full_obs(
         / (CYCLE_LENGTH - DAY_LENGTH)
     )
     obs["game_time_elapsed"][0] += env_obs["real_env_steps"] / MAX_EPISODE_LENGTH
+    assert obs.keys() == obs_keys
+    assert obs["has_ice"].shape == (1, 48, 48)
 
-    return MapFeaturesObservation(**obs)
+    return obs
 
 
-def get_minimap_obs(full_obs: list[np.ndarray], pos: np.ndarray) -> torch.Tensor:
+def get_minimap_obs(full_obs: dict[str, np.ndarray], pos: np.ndarray) -> torch.Tensor:
     """
     Create minimaps for a set of features around (x, y).
     """
@@ -209,219 +200,3 @@ def get_minimap_obs(full_obs: list[np.ndarray], pos: np.ndarray) -> torch.Tensor
 
     mini_obs = [_get_minimap(obs, pos[0], pos[1]) for obs in full_obs]
     return torch.cat([torch.from_numpy(obs).float() for obs in mini_obs], dim=0)
-
-
-jobs = [
-    "ice_miner",
-    "ore_miner",
-    "courier",
-    "sabateur",
-    "soldier",
-    "general",
-    "factory",
-]
-
-
-def get_obs_by_job(
-    full_obs: MapFeaturesObservation,
-    job: str
-) -> list[np.ndarray]:
-    """
-    Only using 'general' for all jobs at the moment.
-    """
-    if job == "ice_miner":
-        obs = [
-            # where ice is
-            full_obs.has_ice,
-            # best factory to send ice
-            full_obs.player_has_factory[0],
-            full_obs.player_factory_ice_unb[0],
-            full_obs.player_factory_water_unb[0],
-            # power info
-            full_obs.player_robot_power[0],
-            full_obs.player_factory_power_unb[0],
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-            # other robots
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            # navigation
-            full_obs.rubble,
-            # cargo status
-            full_obs.player_robot_ice[0],
-            full_obs.player_robot_ore[0],
-            full_obs.player_robot_cargo[0],
-        ]
-    elif job == "ore_miner":
-        obs = [
-            # where ore is
-            full_obs.has_ore,
-            # best factory to send ore
-            full_obs.player_has_factory[0],
-            full_obs.player_factory_ore_unb[0],
-            full_obs.player_factory_metal_unb[0],
-            # power info
-            full_obs.player_robot_power[0],
-            full_obs.player_factory_power_unb[0],
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-            # other robots
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            # navigation
-            full_obs.rubble,
-            # cargo status
-            full_obs.player_robot_ice[0],
-            full_obs.player_robot_ore[0],
-            full_obs.player_robot_cargo[0],
-        ]
-    elif job == "courier":
-        obs = [
-            # my factories and what they have
-            full_obs.player_has_factory[0],
-            full_obs.player_factory_ice_unb[0],
-            full_obs.player_factory_water_unb[0],
-            full_obs.player_factory_ore_unb[0],
-            full_obs.player_factory_metal_unb[0],
-            full_obs.player_factory_power_unb[0],
-            # where other robots are
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            # what my robots have
-            full_obs.player_robot_power[0],
-            full_obs.player_robot_ice[0],
-            full_obs.player_robot_ore[0],
-            full_obs.player_robot_cargo[0],
-            # navigation
-            full_obs.rubble,
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-        ]
-    elif job == "sabateur":
-        obs = [
-            # enemy factories and what they have
-            full_obs.player_has_factory[1],
-            full_obs.player_factory_ice_unb[1],
-            full_obs.player_factory_water_unb[1],
-            full_obs.player_factory_ore_unb[1],
-            full_obs.player_factory_metal_unb[1],
-            full_obs.player_factory_power_unb[1],
-            # where other robots are
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            full_obs.player_robot_power,
-            # navigation
-            full_obs.rubble,
-            # where lichen is
-            full_obs.player_has_lichen,
-            full_obs.player_lichen,
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-        ]
-    elif job == "soldier":
-        obs = [
-            # factories and what they have
-            full_obs.player_has_factory,
-            full_obs.player_factory_ice_unb,
-            full_obs.player_factory_water_unb,
-            full_obs.player_factory_ore_unb,
-            full_obs.player_factory_metal_unb,
-            full_obs.player_factory_power_unb,
-            # navigation
-            full_obs.rubble,
-            # where lichen is
-            full_obs.player_has_lichen,
-            full_obs.player_lichen,
-            # where other robots are, and what they have
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            full_obs.player_robot_power,
-            full_obs.player_robot_ice,
-            full_obs.player_robot_ore,
-            full_obs.player_robot_cargo,
-            # time info
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-        ]
-    elif job == "general":
-        obs = [
-            full_obs.has_ice,
-            full_obs.has_ore,
-            full_obs.player_has_factory,
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            full_obs.player_has_lichen,
-            full_obs.rubble,
-            full_obs.player_lichen,
-            full_obs.player_robot_power,
-            full_obs.player_robot_ice,
-            full_obs.player_robot_ore,
-            full_obs.player_robot_cargo,
-            full_obs.player_factory_ice_unb,
-            full_obs.player_factory_ore_unb,
-            full_obs.player_factory_water_unb,
-            full_obs.player_factory_metal_unb,
-            full_obs.player_factory_power_unb,
-            full_obs.player_tot_robots_unb,
-            full_obs.player_tot_light_robots_unb,
-            full_obs.player_tot_heavy_robots_unb,
-            full_obs.player_tot_factories_unb,
-            full_obs.player_tot_factory_ice_unb,
-            full_obs.player_tot_factory_ore_unb,
-            full_obs.player_tot_factory_water_unb,
-            full_obs.player_tot_factory_metal_unb,
-            full_obs.player_tot_factory_power_unb,
-            full_obs.player_tot_lichen_unb,
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-            full_obs.game_time_elapsed,
-        ]
-    elif job == "factory":
-        obs = [
-            # where robots are
-            full_obs.player_has_robot,
-            full_obs.player_has_light_robot,
-            full_obs.player_has_heavy_robot,
-            # game state
-            full_obs.game_is_day,
-            full_obs.game_day_or_night_elapsed,
-            full_obs.game_time_elapsed,
-            # where factories are
-            full_obs.player_has_factory,
-            # factory resources
-            full_obs.player_factory_ice_unb,
-            full_obs.player_factory_water_unb,
-            full_obs.player_factory_ore_unb,
-            full_obs.player_factory_metal_unb,
-            full_obs.player_factory_power_unb,
-            # where map resources are
-            full_obs.has_ice,
-            full_obs.has_ore,
-            full_obs.rubble,
-            # where lichen is
-            full_obs.player_has_lichen,
-            full_obs.player_lichen,
-            # per-player total values
-            full_obs.player_tot_robots_unb,
-            full_obs.player_tot_light_robots_unb,
-            full_obs.player_tot_heavy_robots_unb,
-            full_obs.player_tot_factory_ice_unb,
-            full_obs.player_tot_factory_water_unb,
-            full_obs.player_tot_factory_ore_unb,
-            full_obs.player_tot_factory_metal_unb,
-            full_obs.player_tot_factory_power_unb,
-            full_obs.player_tot_lichen_unb,
-        ]
-    else:
-        raise ValueError(f"Unknown unit job: {job}")
-    return obs

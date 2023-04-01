@@ -19,8 +19,8 @@ from lux_entry.lux.utils import my_turn_to_place_factory
 from lux_entry.training.controller import EnvController
 from lux_entry.training.observations import (
     get_full_obs,
+    get_full_obs_space,
     get_minimap_obs,
-    get_obs_by_job,
 )
 
 
@@ -169,44 +169,16 @@ class SolitaireWrapper(gym.Wrapper):
         return obs[self.player]
 
 
-UnitObsInfo = dict[str, Union[str, torch.Tensor]]
-
-
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, player: Player) -> None:
         super().__init__(env)
         self.env_cfg = self.env.state.env_cfg
-        self.observation_space = spaces.Dict({
-            "conv_obs":spaces.Box(-999, 999, shape=(104, 12, 12)),
-            "skip_obs":spaces.Box(-999, 999, shape=(4, 12, 12)),
-        })
+        self.observation_space = get_full_obs_space(self.env_cfg)
         self.player = player
         self.opponent = "player_1" if player == "player_0" else "player_0"
 
-    def observation(
-        self, obs: ObservationStateDict
-    ) -> dict[str, UnitObsInfo]:
-        """
-        Get minimaps for each unit based on what it needs to know for its job.
-        """
-        full_obs = get_full_obs(obs, self.env_cfg, self.player, self.opponent)
-        assert full_obs.has_ice.shape == (1, 48, 48)
-
-        units = obs["units"][self.player]
-        unit_jobs = {
-            unit_info["unit_id"]: "general"  # TODO: calculate unit jobs
-            for unit_info in units.values()
-        }
-        minimap_obs = {}
-        for unit_info in units.values():
-            unit_id = unit_info["unit_id"]
-            full_obs_subset = get_obs_by_job(full_obs, unit_jobs[unit_id])
-            mini_obs = get_minimap_obs(full_obs_subset, unit_info["pos"])
-            minimap_obs[unit_id] = {
-                "job": unit_jobs[unit_id],
-                "mini_obs": mini_obs,
-            }
-        return minimap_obs
+    def observation(self, obs: ObservationStateDict) -> dict[str, np.ndarray]:
+        return get_full_obs(obs, self.env_cfg, self.player, self.opponent)
 
 
 class TrainingWrapper(gym.Wrapper):
