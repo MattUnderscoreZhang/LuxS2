@@ -1,10 +1,9 @@
 import copy
 import gym
-from gym import spaces
 from gym.wrappers.time_limit import TimeLimit
 import numpy as np
-import torch
-from typing import Callable, Any, Union
+from torch import Tensor
+from typing import Callable, Any
 
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
@@ -20,7 +19,6 @@ from lux_entry.training.controller import EnvController
 from lux_entry.training.observations import (
     get_full_obs,
     get_full_obs_space,
-    get_minimap_obs,
 )
 
 
@@ -177,7 +175,7 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.player = player
         self.opponent = "player_1" if player == "player_0" else "player_0"
 
-    def observation(self, obs: ObservationStateDict) -> dict[str, np.ndarray]:
+    def observation(self, obs: ObservationStateDict) -> dict[str, Tensor]:
         return get_full_obs(obs, self.env_cfg, self.player, self.opponent)
 
 

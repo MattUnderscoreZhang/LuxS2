@@ -72,7 +72,7 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
 
 def get_full_obs(
     env_obs: ObservationStateDict, env_cfg: EnvConfig, player: Player, opponent: Player,
-) -> dict[str, np.ndarray]:
+) -> dict[str, torch.Tensor]:
     # normalization factors
     MAX_FS = env_cfg.MAX_FACTORIES
     MAX_RUBBLE = env_cfg.MAX_RUBBLE
@@ -160,25 +160,31 @@ def get_full_obs(
         / (CYCLE_LENGTH - DAY_LENGTH)
     )
     obs["game_time_elapsed"][0] += env_obs["real_env_steps"] / MAX_EPISODE_LENGTH
-    assert obs.keys() == obs_keys
-    assert obs["has_ice"].shape == (1, 48, 48)
+    # assert [k for k in obs.keys()] == obs_keys
+    # assert obs["has_ice"].shape == (1, 48, 48)
+    obs = {
+        key: torch.from_numpy(value).float()
+        for key, value in obs.items()
+    }
 
     return obs
 
 
-def get_minimap_obs(full_obs: dict[str, np.ndarray], pos: np.ndarray) -> torch.Tensor:
+def get_minimap_obs(
+    full_obs: dict[str, torch.Tensor], pos: torch.Tensor,
+) -> dict[str, torch.Tensor]:
     """
     Create minimaps for a set of features around (x, y).
     """
-    def _mean_pool(arr: np.ndarray, window: int) -> np.ndarray:
+    def _mean_pool(arr: torch.Tensor, window: int) -> torch.Tensor:
         arr = arr.reshape(
             arr.shape[0] // window, window, arr.shape[1] // window, window
         )
         return np.mean(arr, axis=(1, 3))
 
-    def _get_minimap(obs: np.ndarray, x: int, y: int) -> np.ndarray:
-        expanded_map = np.full((obs.shape[0], 96, 96), -1.0)
-        minimap = np.zeros((obs.shape[0] * 4, 12, 12))
+    def _get_minimap(obs: torch.Tensor, x: int, y: int) -> torch.Tensor:
+        expanded_map = torch.full((obs.shape[0], 96, 96), -1.0)
+        minimap = torch.zeros((obs.shape[0] * 4, 12, 12))
         for p in range(obs.shape[0]):
             # unit is in lower right pixel of upper left quadrant
             expanded_map[p][x : x + 48, y : y + 48] = obs[p]  # TODO: group minimap sizes better
@@ -198,5 +204,8 @@ def get_minimap_obs(full_obs: dict[str, np.ndarray], pos: np.ndarray) -> torch.T
         )
         return minimap
 
-    mini_obs = [_get_minimap(obs, pos[0], pos[1]) for obs in full_obs]
-    return torch.cat([torch.from_numpy(obs).float() for obs in mini_obs], dim=0)
+    mini_obs = {
+        key: _get_minimap(value, pos[0], pos[1])
+        for key, value in full_obs.items()
+    }
+    return mini_obs

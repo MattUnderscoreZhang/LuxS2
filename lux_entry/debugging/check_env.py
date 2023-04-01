@@ -9,13 +9,12 @@ def check_env() -> None:
 
     for _ in range(100):
         obs = env.reset()
-        done = False
         step_n = 0
         total_reward = 0
-        while not done:
+        for _ in range(10):
             breakpoint()
             obs = add_batch_dimension(obs)
-            action = np.array([1])
+            action = 1
             obs, reward, done, _ = env.step(action)
             total_reward += reward
 
