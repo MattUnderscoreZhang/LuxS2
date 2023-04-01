@@ -14,7 +14,6 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from lux_entry.training.observations import get_minimap_obs
 
 
-WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
 N_INPUTS = 56
 N_MINIMAP_MAGNIFICATIONS = 4
 N_FEATURES = 64
@@ -36,8 +35,10 @@ class JobFeaturesNet(nn.Module):
 
     def forward(self, minimap_obs: list[Tensor]) -> Tensor:
         x = torch.cat([
-            self.per_pixel_branch(obs)
-            for obs in minimap_obs
+            self.per_pixel_branch(magnification_obs)
+            if i == 0  # TODO: unfreeze other magnifications
+            else torch.zeros(8, 12, 12)
+            for i, magnification_obs in enumerate(minimap_obs)
         ], dim=0)
         x = x.view(-1)
         x = self.fc_layer_1(x)
@@ -113,6 +114,7 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         """
         Use net for each unit based on its job.
         """
+        breakpoint()
         batch_robot_map = batch_full_obs["player_has_robot"][:,0]
 
         # TODO: remove after testing

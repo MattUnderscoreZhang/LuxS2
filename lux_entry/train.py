@@ -49,7 +49,7 @@ def train(args: argparse.Namespace, model: BaseAlgorithm):
 
 
 def evaluate(args: argparse.Namespace, model: BaseAlgorithm):
-    model = model.load(args.model_path)
+    model = model.load(args.weights_path)
     video_length = 1000  # default horizon
     eval_env = SubprocVecEnv(
         [make_env(i, max_episode_steps=1000) for i in range(args.n_envs)]
@@ -82,9 +82,12 @@ def main(args: argparse.Namespace):
         evaluate(args, model)
     else:
         if args.continue_training:
-            model = model.load(args.model_path)
+            model = model.load(args.weights_path)
             model.set_env(env)
         train(args, model)  # TODO: instead of setting up model and training once, set up models for each lesson in the curriculum
+
+
+WEIGHTS_PATH = Path(__file__).parent / "logs" / "models" / "best_model"
 
 
 if __name__ == "__main__":
@@ -114,7 +117,7 @@ if __name__ == "__main__":
     ) as f:
         training_args = argparse.Namespace(**yaml.safe_load(f))
     training_args.log_path = Path(__file__).parent / "logs"
-    training_args.model_path = Path(__file__).parent / "logs" / "models" / "best_model"
+    training_args.weights_path = WEIGHTS_PATH
     training_args.eval = args.eval
     training_args.continue_training = not args.new_training
     main(training_args)

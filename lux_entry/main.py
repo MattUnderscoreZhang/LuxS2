@@ -18,6 +18,7 @@ from lux_entry.lux.utils import (
     process_obs,
 )
 from lux_entry.training import env, net
+from lux_entry.train import WEIGHTS_PATH
 
 
 class Agent:
@@ -25,7 +26,7 @@ class Agent:
         self.player: Player = player
         self.env_cfg: EnvConfig = env_cfg
 
-        self.nets: net.UnitsNet = self._load_net(net.UnitsNet, net.WEIGHTS_PATH)
+        self.nets: net.UnitsNet = self._load_net(net.UnitsNet, WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.nets.eval().to(device)
         self.controller: env.EnvController = env.EnvController(self.env_cfg)
