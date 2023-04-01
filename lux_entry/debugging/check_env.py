@@ -1,11 +1,30 @@
-import numpy as np
+from stable_baselines3.common.vec_env import SubprocVecEnv
+
+from luxai_s2.map_generator.generator import argparse
 
 from lux_entry.lux.utils import add_batch_dimension
 from lux_entry.training.env import make_env
+from lux_entry.training.net import get_model
 
 
 def check_env() -> None:
     env = make_env(0)()
+    env = SubprocVecEnv(
+        [make_env(i, max_episode_steps=1000) for i in range(4)]
+    )
+    args = argparse.Namespace(
+        seed=12,
+        n_envs=1,
+        max_episode_steps=200,
+        total_timesteps=1,
+        rollout_steps=3_000,
+        eval_freq=24_000,
+        batch_size=1_000,
+        learning_rate=0.0003,
+        target_kl=0.05,
+        gamma=0.99,
+    )
+    model = get_model(env, args)
 
     for _ in range(100):
         obs = env.reset()

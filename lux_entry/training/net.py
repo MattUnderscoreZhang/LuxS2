@@ -1,11 +1,9 @@
+import argparse
 from gym import spaces
-import numpy as np
 from os import path
 import sys
-from luxai_s2.map_generator.generator import argparse
 import torch
-from torch import nn
-from torch.functional import Tensor
+from torch import nn, Tensor
 from typing import Any, Callable
 
 from stable_baselines3 import PPO
@@ -18,33 +16,36 @@ from lux_entry.training.observations import get_minimap_obs
 
 WEIGHTS_PATH = path.join(path.dirname(__file__), "logs/models/best_model.zip")
 N_INPUTS = 56
-N_MINIMAPS_PER_INPUT = 4
+N_MINIMAP_MAGNIFICATIONS = 4
 N_FEATURES = 64
 
 
 class JobFeaturesNet(nn.Module):
     def __init__(self):
-        n_in_channels = N_INPUTS * N_MINIMAPS_PER_INPUT
-        self.per_pixel_branch = nn.Sequential(  # TODO: have branches operate identically on different minimap sizes
-            nn.Conv2d(n_in_channels, 512, 1),
+        super().__init__()
+        self.per_pixel_branch = nn.Sequential(
+            nn.Conv2d(N_INPUTS, 32, 1),
             nn.Tanh(),
-            nn.Conv2d(512, 64, 1),
+            nn.Conv2d(32, 8, 1),
+            nn.Tanh(),
+            nn.Conv2d(8, 8, 3, padding=1),
             nn.Tanh(),
         )
-        # TODO: append original minimaps
-        self.conv_layer = nn.Conv2d(N_INPUTS + 64, 16, 3, stride=3)  # TODO: conv identically on different minimap sizes
-        self.fc_layer= nn.Linear(32 * 4 * 4, N_FEATURES)  # TODO: concat and flatten afterwards
+        self.fc_layer_1= nn.Linear(8 * N_MINIMAP_MAGNIFICATIONS * 12 * 12, 1024)
+        self.fc_layer_2= nn.Linear(1024, N_FEATURES)
 
-    def forward(self, obs: Tensor) -> Tensor:
+    def forward(self, minimap_obs: list[Tensor]) -> Tensor:
         x = torch.cat([
-            obs,
-            self.per_pixel_branch(obs),
-        ], dim=1)
+            self.per_pixel_branch(obs)
+            for obs in minimap_obs
+        ], dim=0)
+        x = x.view(-1)
+        x = self.fc_layer_1(x)
         x = torch.tanh(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc_layer(x)
+        x = self.fc_layer_2(x)
         x = torch.tanh(x)
-        return x  # batch_size x N_FEATURES
+        assert x.shape == (N_FEATURES, )
+        return x
 
     def load_weights(self, state_dict: Any) -> None:
         # TODO: make weights load separately for each job type
@@ -84,13 +85,14 @@ jobs = [
     "courier",
     "sabateur",
     "soldier",
+    "generalist",
     "factory",
 ]
 
 
 class UnitsFeaturesExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int):
-        super().__init__(observation_space, features_dim)
+    def __init__(self, observation_space: spaces.Dict):
+        super().__init__(observation_space, N_FEATURES)
         self.features_nets = {
             job: JobFeaturesNet()
             for job in jobs
@@ -98,27 +100,53 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         for job, net in self.features_nets.items():
             self.add_module(job, net)
 
-    def get_unit_jobs(self, unit_positions: np.ndarray) -> list[str]:
+    def get_unit_jobs(self, batch_unit_positions: list[Tensor]) -> list[list[str]]:
         return [
-            "general"  # TODO: calculate unit jobs
-            for pos in unit_positions
+            [
+                "generalist"  # TODO: calculate unit jobs
+                for _ in unit_positions
+            ]
+            for unit_positions in batch_unit_positions
         ]
 
-    def forward(self, full_obs: dict[str, np.ndarray]) -> Tensor:
+    def forward(self, batch_full_obs: dict[str, Tensor]) -> list[Tensor]:
         """
         Use net for each unit based on its job.
         """
-        unit_positions = np.argwhere(full_obs["player_has_robot"][0])
-        unit_jobs = self.get_unit_jobs(unit_positions)
-        minimap_obs = [
-            get_minimap_obs(full_obs, unit_position)
-            for unit_position in unit_positions
+        batch_robot_map = batch_full_obs["player_has_robot"][:,0]
+
+        # TODO: remove after testing
+        # add robots for testing
+        batch_robot_map[0][3][6] = 1
+        batch_robot_map[1][3][6] = 1
+        batch_robot_map[1][5][2] = 1
+
+        batch_unit_positions = [
+            torch.argwhere(robot_map)
+            for robot_map in batch_robot_map
         ]
-        unit_features = torch.cat([
-            self.features_nets[job](obs)
-            for job, obs in zip(unit_jobs, minimap_obs)
-        ], dim=1)
-        return unit_features
+        batch_unit_jobs = self.get_unit_jobs(batch_unit_positions)
+        # batch_unit_jobs[batch_n][unit_n]: str
+        batch_minimap_obs = [
+            [
+                get_minimap_obs(full_obs, unit_position)
+                for unit_position in unit_positions
+            ]
+            for i, unit_positions in enumerate(batch_unit_positions)
+            if (full_obs := {k: v[i] for k, v in batch_full_obs.items()})
+        ]
+        # batch_minimap_obs[batch_n][unit_n][obs_size]: Tensor (N_INPUTS x 12 x 12)
+        batch_unit_features = [
+            torch.cat([
+                self.features_nets[job](obs).unsqueeze(0)
+                for job, obs in zip(unit_jobs, unit_minimap_obs)
+            ])
+            if len(unit_jobs) > 0
+            else torch.zeros(0, N_FEATURES)
+            for unit_jobs, unit_minimap_obs in zip(batch_unit_jobs, batch_minimap_obs)
+        ]
+        # batch_unit_features[batch_n]: Tensor (n_units x N_FEATURES)
+        return batch_unit_features
 
 
 class ActorCriticNet(nn.Module):
@@ -141,8 +169,16 @@ class ActorCriticNet(nn.Module):
     def forward_critic(self, features: Tensor) -> Tensor:
         return self.value_net(features)
 
-    def forward(self, features: Tensor) -> tuple[Tensor, Tensor]:
-        return self.forward_actor(features), self.forward_critic(features)
+    def forward(self, batch_features: list[Tensor]) -> tuple[list[Tensor], list[Tensor]]:
+        batch_policies = [
+            self.forward_actor(features)
+            for features in batch_features
+        ]
+        batch_values = [
+            self.forward_critic(features)
+            for features in batch_features
+        ]
+        return batch_policies, batch_values
 
 
 class CustomActorCriticPolicy(ActorCriticPolicy):

@@ -114,7 +114,7 @@ if __name__ == "__main__":
     ) as f:
         training_args = argparse.Namespace(**yaml.safe_load(f))
     training_args.log_path = Path(__file__).parent / "logs"
-    training_args.model_path = Path(__file__).parent / "logs" / "models" / "best_model.zip"
+    training_args.model_path = Path(__file__).parent / "logs" / "models" / "best_model"
     training_args.eval = args.eval
     training_args.continue_training = not args.new_training
     main(training_args)

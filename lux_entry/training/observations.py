@@ -1,6 +1,7 @@
 from gym import spaces
 import numpy as np
 import torch
+from torch import Tensor
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -72,7 +73,7 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
 
 def get_full_obs(
     env_obs: ObservationStateDict, env_cfg: EnvConfig, player: Player, opponent: Player,
-) -> dict[str, torch.Tensor]:
+) -> dict[str, Tensor]:
     # normalization factors
     MAX_FS = env_cfg.MAX_FACTORIES
     MAX_RUBBLE = env_cfg.MAX_RUBBLE
@@ -170,42 +171,43 @@ def get_full_obs(
     return obs
 
 
-def get_minimap_obs(
-    full_obs: dict[str, torch.Tensor], pos: torch.Tensor,
-) -> dict[str, torch.Tensor]:
+def get_minimap_obs(full_obs: dict[str, Tensor], pos: Tensor) -> list[Tensor]:
     """
     Create minimaps for a set of features around (x, y).
+    Return a list of four minimap magnifications, each with all features concated.
     """
-    def _mean_pool(arr: torch.Tensor, window: int) -> torch.Tensor:
-        arr = arr.reshape(
-            arr.shape[0] // window, window, arr.shape[1] // window, window
-        )
-        return np.mean(arr, axis=(1, 3))
+    def _mean_pool(arr: Tensor, window: int) -> Tensor:
+        arr = arr.unfold(1, window, window).unfold(2, window, window)
+        return torch.mean(arr, dim=(3, 4))
 
-    def _get_minimap(obs: torch.Tensor, x: int, y: int) -> torch.Tensor:
-        expanded_map = torch.full((obs.shape[0], 96, 96), -1.0)
-        minimap = torch.zeros((obs.shape[0] * 4, 12, 12))
-        for p in range(obs.shape[0]):
+    def _get_minimaps(obs: Tensor, x: Tensor, y: Tensor) -> list[Tensor]:
+        n_players = obs.shape[0]
+        expanded_map = torch.full((n_players, 96, 96), -1.0)
+        # minimap = torch.zeros((n_players * 4, 12, 12))
+        for p in range(n_players):
             # unit is in lower right pixel of upper left quadrant
-            expanded_map[p][x : x + 48, y : y + 48] = obs[p]  # TODO: group minimap sizes better
-            # small map (12x12 area)
-            minimap[p * 4] = expanded_map[p][42:54, 42:54]
-            # medium map (24x24 area)
-            minimap[p * 4 + 1] = _mean_pool(expanded_map[p][36:60, 36:60], 2)
-            # large map (48x48 area)
-            minimap[p * 4 + 2] = _mean_pool(expanded_map[p][24:72, 24:72], 4)
-            # full map (96x96 area)
-            minimap[p * 4 + 3] = _mean_pool(expanded_map[p], 8)
-        assert (
-            len(minimap.shape) == 3
-            # variable second dimension
-            and minimap.shape[1] == 12
-            and minimap.shape[2] == 12
-        )
-        return minimap
+            expanded_map[p][x : x + 48, y : y + 48] = obs[p]
+        minimaps = [
+            expanded_map[:, 42:54, 42:54],  # small map (12x12 area)
+            _mean_pool(expanded_map[:, 36:60, 36:60], 2),  # medium map (24x24 area)
+            _mean_pool(expanded_map[:, 24:72, 24:72], 4),  # large map (48x48 area)
+            _mean_pool(expanded_map[:], 8),  # full map (96x96 area)
+        ]
+        # for minimap in minimaps:
+            # assert (
+                # len(minimap.shape) == 3
+                # # variable second dimension (n_players)
+                # and minimap.shape[1] == 12
+                # and minimap.shape[2] == 12
+            # )
+        return minimaps
 
     mini_obs = {
-        key: _get_minimap(value, pos[0], pos[1])
+        key: _get_minimaps(value, pos[0], pos[1])
         for key, value in full_obs.items()
     }
+    mini_obs = [
+        torch.cat([mini_obs[key][i] for key in mini_obs.keys()], dim=0)
+        for i in range(4)
+    ]
     return mini_obs
