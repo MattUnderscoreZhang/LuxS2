@@ -1,6 +1,5 @@
 import argparse
 from gym import spaces
-from os import path
 import sys
 import torch
 from torch import nn, Tensor
@@ -11,6 +10,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
+from lux_entry.lux.utils import add_batch_dimension
 from lux_entry.training.observations import get_minimap_obs
 
 
@@ -140,7 +140,7 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         # batch_minimap_obs[batch_n][unit_n][obs_size]: Tensor (N_INPUTS x 12 x 12)
         batch_unit_features = [
             torch.cat([
-                self.features_nets[job](obs).unsqueeze(0)
+                add_batch_dimension(self.features_nets[job](obs))
                 for job, obs in zip(unit_jobs, unit_minimap_obs)
             ])
             if len(unit_jobs) > 0

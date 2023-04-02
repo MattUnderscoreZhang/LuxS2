@@ -1,4 +1,3 @@
-import copy
 import gym
 from gym.wrappers.time_limit import TimeLimit
 import numpy as np
@@ -20,10 +19,11 @@ from lux_entry.training.observations import (
     get_full_obs,
     get_full_obs_space,
 )
+from lux_entry.training.rewards import ice_mining_reward
 
 
 bid_policy = bidding.zero_bid
-factory_placement_policy = factory_placement.place_near_random_ice
+factory_placement_policy = factory_placement.random_factory_placement
 controller = EnvController
 
 
@@ -43,8 +43,8 @@ def make_env(
             controller=controller(env.env_cfg),
         )
         env = SolitaireWrapper(env, "player_0")
+        env = RewardWrapper(env, "player_0", ice_mining_reward)
         env = ObservationWrapper(env, "player_0")
-        env = TrainingWrapper(env, "player_0")
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -166,27 +166,17 @@ class SolitaireWrapper(gym.Wrapper):
         return obs[self.player]
 
 
-class ObservationWrapper(gym.ObservationWrapper):
-    def __init__(self, env: gym.Env, player: Player) -> None:
-        super().__init__(env)
-        self.env_cfg = self.env.state.env_cfg
-        self.observation_space = get_full_obs_space(self.env_cfg)
-        self.player = player
-        self.opponent = "player_1" if player == "player_0" else "player_0"
-
-    def observation(self, obs: ObservationStateDict) -> dict[str, Tensor]:
-        return get_full_obs(obs, self.env_cfg, self.player, self.opponent)
-
-
-class TrainingWrapper(gym.Wrapper):
-    def __init__(self, env: gym.Env, player: Player) -> None:
+class RewardWrapper(gym.Wrapper):
+    def __init__(self, env: gym.Env, player: Player, reward: Callable) -> None:
         """
         Alters the environment between steps for training purposes.
         """
         super().__init__(env)
-        self.prev_step_metrics = None
+        self.env_cfg = self.env.state.env_cfg
+        self.prev_reward_calculations = None
         self.player = player
         self.opponent = "player_1" if player == "player_0" else "player_0"
+        self.reward = reward
 
     def keep_enemy_alive(self):
         """
@@ -200,30 +190,14 @@ class TrainingWrapper(gym.Wrapper):
     def calculate_metrics(self) -> dict:
         stats: StatsStateDict = self.env.state.stats[self.player]
         metrics = {
-            "ice_dug": (
+            "total_ice_dug": (
                 stats["generation"]["ice"]["HEAVY"] + stats["generation"]["ice"]["LIGHT"]
             ),
-            "water_produced": stats["generation"]["water"],
+            "total_water_produced": stats["generation"]["water"],
             "action_queue_updates_success": stats["action_queue_updates_success"],
             "action_queue_updates_total": stats["action_queue_updates_total"],
         }
         return metrics
-
-    def calculate_ice_mining_reward(self, metrics: dict):
-        reward = 0
-        # TODO: make reward sum([
-        # delta_dist_to_nearest_factory + ice_delivered if unit.cargo_full
-        # else delta_dist_to_nearest_ice + ice_mined
-        # for unit in units
-        # ])
-        if self.prev_step_metrics is not None:
-            ice_dug_this_step = metrics["ice_dug"] - self.prev_step_metrics["ice_dug"]
-            water_produced_this_step = (
-                metrics["water_produced"] - self.prev_step_metrics["water_produced"]
-            )
-            reward = ice_dug_this_step / 100 + water_produced_this_step  # prioritize water
-        self.prev_step_metrics = copy.deepcopy(metrics)
-        return reward
 
     def step(self, action: np.ndarray):
         """
@@ -232,10 +206,27 @@ class TrainingWrapper(gym.Wrapper):
         self.keep_enemy_alive()
         obs, _, done, info = self.env.step(action)
         info["metrics"] = self.calculate_metrics()
-        reward = self.calculate_ice_mining_reward(info["metrics"])
+        reward, self.prev_reward_calculations = self.reward(
+            obs=obs,
+            player=self.player,
+            env_cfg=self.env_cfg,
+            prev_reward_calculations=self.prev_reward_calculations,
+        )
         return obs, reward, done, info
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         self.prev_step_metrics = None
         return obs
+
+
+class ObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env: gym.Env, player: Player) -> None:
+        super().__init__(env)
+        self.env_cfg = self.env.state.env_cfg
+        self.observation_space = get_full_obs_space(self.env_cfg)
+        self.player = player
+        self.opponent = "player_1" if player == "player_0" else "player_0"
+
+    def observation(self, obs: ObservationStateDict) -> dict[str, Tensor]:
+        return get_full_obs(obs, self.env_cfg, self.player, self.opponent)

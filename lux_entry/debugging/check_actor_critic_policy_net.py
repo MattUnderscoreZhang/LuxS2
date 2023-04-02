@@ -8,7 +8,7 @@
 
 # from stable_baselines3.common.vec_env import SubprocVecEnv
 
-# from lux_entry.training.net import get_model
+# from lux_entry.training.model import get_model
 
 
 # def check_net(args: argparse.Namespace) -> None:

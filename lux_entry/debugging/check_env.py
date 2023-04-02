@@ -4,7 +4,7 @@ from luxai_s2.map_generator.generator import argparse
 
 from lux_entry.lux.utils import add_batch_dimension
 from lux_entry.training.env import make_env
-from lux_entry.training.net import get_model
+from lux_entry.training.model import get_model
 
 
 def check_env() -> None:

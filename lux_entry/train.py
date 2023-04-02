@@ -9,7 +9,7 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
 
 from lux_entry.training.env import make_env
-from lux_entry.training.net import get_model
+from lux_entry.training.model import get_model
 
 
 class TensorboardCallback(BaseCallback):

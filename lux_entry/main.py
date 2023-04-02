@@ -26,12 +26,12 @@ class Agent:
         self.player: Player = player
         self.env_cfg: EnvConfig = env_cfg
 
-        self.nets: net.UnitsNet = self._load_net(net.UnitsNet, WEIGHTS_PATH)
+        self.model: net.UnitsNet = self._load_model(net.UnitsNet, WEIGHTS_PATH)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.nets.eval().to(device)
+        self.model.eval().to(device)
         self.controller: env.EnvController = env.EnvController(self.env_cfg)
 
-    def _load_net(self, model_class: type[net.UnitsNet], model_path: str) -> net.UnitsNet:
+    def _load_model(self, model_class: type[net.UnitsNet], model_path: str) -> net.UnitsNet:
         if model_path[-4:] == ".zip":
             with zipfile.ZipFile(model_path) as archive:
                 file_path = "policy.pth"
@@ -43,9 +43,9 @@ class Agent:
         else:
             sb3_state_dict = torch.load(model_path, map_location="cpu")
 
-        nets = model_class()
-        nets.load_weights(sb3_state_dict)
-        return nets
+        model = model_class()
+        model.load_weights(sb3_state_dict)
+        return model
 
     def bid_policy(
         self, step: int, obs: ObservationStateDict, remainingOverageTime: int = 60
@@ -77,7 +77,7 @@ class Agent:
             ).bool()
             observation = add_batch_dimension(obs)
             actions = (
-                self.nets(observation, deterministic=False, action_masks=action_mask)
+                self.model(observation, deterministic=False, action_masks=action_mask)
                 .cpu()
                 .numpy()
             )
