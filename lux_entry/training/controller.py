@@ -5,6 +5,7 @@ from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
+from lux_entry.training.model import MAX_ROBOTS
 
 
 class EnvController:
@@ -46,7 +47,7 @@ class EnvController:
         self.no_op_dim_high = self.dig_dim_high + self.no_op_dims
 
         self.total_act_dims = self.no_op_dim_high
-        self.action_space = spaces.Discrete(self.total_act_dims)
+        self.action_space = spaces.MultiDiscrete([self.total_act_dims] * MAX_ROBOTS)
 
     def _is_move_action(self, id):
         return id < self.move_dim_high

@@ -1,9 +1,8 @@
 import argparse
 from gym import spaces
-import sys
 import torch
 from torch import nn, Tensor
-from typing import Any, Callable
+from typing import Callable
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
@@ -138,22 +137,25 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
 class ActorCriticNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.latent_dim_pi = 64
-        self.latent_dim_vf = 64
+        LATENT_DIM = 64
+        self.latent_dim_pi = 64 * MAX_ROBOTS
+        self.latent_dim_vf = 64 * MAX_ROBOTS
         self.policy_net = nn.Sequential(
-            nn.Linear(N_FEATURES, self.latent_dim_pi),
+            nn.Linear(N_FEATURES, LATENT_DIM),
             nn.ReLU(),
         )
         self.value_net = nn.Sequential(
-            nn.Linear(N_FEATURES, self.latent_dim_vf),
+            nn.Linear(N_FEATURES, LATENT_DIM),
             nn.ReLU(),
         )
 
     def forward_actor(self, batch_features: Tensor) -> Tensor:
-        return self.policy_net(batch_features)
+        policy = self.policy_net(batch_features)
+        return policy.view(policy.shape[0], -1)
 
     def forward_critic(self, batch_features: Tensor) -> Tensor:
-        return self.value_net(batch_features)
+        value = self.value_net(batch_features)
+        return value.view(value.shape[0], -1)
 
     def forward(self, batch_features: Tensor) -> tuple[Tensor, Tensor]:
         return self.forward_actor(batch_features), self.forward_critic(batch_features)
@@ -168,7 +170,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         *args,
         **kwargs,
     ):
-
         super().__init__(
             observation_space,
             action_space,
@@ -204,6 +205,7 @@ def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
     return model
 
 
+"""
 def load_weights(model: nn.Module, state_dict: Any) -> None:
     # TODO: make weights load separately for each job type
     net_keys = [
@@ -234,3 +236,4 @@ def load_weights(model: nn.Module, state_dict: Any) -> None:
         loaded_state_dict[model_key] = state_dict[sb3_key]
         print("loaded", sb3_key, "->", model_key, file=sys.stderr)
     model.load_state_dict(loaded_state_dict)
+"""

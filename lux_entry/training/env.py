@@ -204,7 +204,6 @@ class RewardWrapper(gym.Wrapper):
         Calculate metrics and reward, with info["metrics"] passed to Tensorboard in train.py.
         """
         self.keep_enemy_alive()
-        print(action)  # TODO: remove after testing
         obs, _, done, info = self.env.step(action)
         info["metrics"] = self.calculate_metrics()
         reward, self.prev_reward_calculations = self.reward(
