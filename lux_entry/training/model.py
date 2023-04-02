@@ -11,19 +11,19 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from lux_entry.lux.utils import add_batch_dimension
-from lux_entry.training.observations import get_minimap_obs
+from lux_entry.training.observations import (
+    get_minimap_obs, N_OBS_CHANNELS, N_MINIMAP_MAGNIFICATIONS
+)
 
 
-N_INPUTS = 56
-N_MINIMAP_MAGNIFICATIONS = 4
 N_FEATURES = 64
 
 
-class JobFeaturesNet(nn.Module):
+class JobNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.per_pixel_branch = nn.Sequential(
-            nn.Conv2d(N_INPUTS, 32, 1),
+            nn.Conv2d(N_OBS_CHANNELS, 32, 1),
             nn.Tanh(),
             nn.Conv2d(32, 8, 1),
             nn.Tanh(),
@@ -45,39 +45,8 @@ class JobFeaturesNet(nn.Module):
         x = torch.tanh(x)
         x = self.fc_layer_2(x)
         x = torch.tanh(x)
-        assert x.shape == (N_FEATURES, )
+        # assert x.shape == (N_FEATURES, )
         return x
-
-    def load_weights(self, state_dict: Any) -> None:
-        # TODO: make weights load separately for each job type
-        net_keys = [
-            layer_name
-            for layer in [
-                "inception_1",
-                "inception_3",
-                "inception_5",
-                "conv_reduction_layer",
-                "skip_reduction_layer",
-                "fc_layer",
-            ]
-            for layer_name in [
-                f"features_extractor.net.{layer}.weight",
-                f"features_extractor.net.{layer}.bias",
-            ]
-        ] + [
-            layer_name
-            for layer_name in state_dict.keys()
-            if layer_name.startswith("mlp_extractor.")
-        ] + [
-            layer_name
-            for layer_name in state_dict.keys()
-            if layer_name.startswith("action_net.")
-        ]
-        loaded_state_dict = {}
-        for sb3_key, model_key in zip(net_keys, self.state_dict().keys()):
-            loaded_state_dict[model_key] = state_dict[sb3_key]
-            print("loaded", sb3_key, "->", model_key, file=sys.stderr)
-        self.load_state_dict(loaded_state_dict)
 
 
 jobs = [
@@ -91,64 +60,79 @@ jobs = [
 ]
 
 
+MAX_ROBOTS = 256
+
+
 class UnitsFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict):
         super().__init__(observation_space, N_FEATURES)
-        self.features_nets = {
-            job: JobFeaturesNet()
+        self.job_nets = {
+            job: JobNet()
             for job in jobs
         }
-        for job, net in self.features_nets.items():
+        for job, net in self.job_nets.items():
             self.add_module(job, net)
 
-    def get_unit_jobs(self, batch_unit_positions: list[Tensor]) -> list[list[str]]:
+    def get_robot_jobs(self, batch_robot_positions: list[Tensor]) -> list[list[str]]:
         return [
             [
-                "generalist"  # TODO: calculate unit jobs
-                for _ in unit_positions
+                "generalist"  # TODO: calculate robot jobs
+                for _ in robot_positions
             ]
-            for unit_positions in batch_unit_positions
+            for robot_positions in batch_robot_positions
         ]
 
-    def forward(self, batch_full_obs: dict[str, Tensor]) -> list[Tensor]:
+    def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
         """
-        Use net for each unit based on its job.
+        Use net to extract features for each robot based on its job.
+        Output is padded to length MAX_ROBOTS.
         """
-        breakpoint()
-        batch_robot_map = batch_full_obs["player_has_robot"][:,0]
-
-        # TODO: remove after testing
-        # add robots for testing
-        batch_robot_map[0][3][6] = 1
-        batch_robot_map[1][3][6] = 1
-        batch_robot_map[1][5][2] = 1
-
-        batch_unit_positions = [
+        # get robot positions
+        batch_has_robot = batch_full_obs["player_has_robot"][:,0]
+        batch_robot_positions = [
             torch.argwhere(robot_map)
-            for robot_map in batch_robot_map
+            for robot_map in batch_has_robot
         ]
-        batch_unit_jobs = self.get_unit_jobs(batch_unit_positions)
-        # batch_unit_jobs[batch_n][unit_n]: str
-        batch_minimap_obs = [
+
+        # calculate robot jobs
+        # type(batch_robot_jobs[batch_n][robot_n]): str
+        batch_robot_jobs = self.get_robot_jobs(batch_robot_positions)
+
+        # get minimap observations
+        # batch_mini_obs[batch_n][robot_n][zoom_level].shape(): (N_OBS_CHANNELS, 12, 12)
+        batch_mini_obs = [
             [
-                get_minimap_obs(full_obs, unit_position)
-                for unit_position in unit_positions
+                get_minimap_obs(full_obs, robot_position)
+                for robot_position in robot_positions
             ]
-            for i, unit_positions in enumerate(batch_unit_positions)
+            for i, robot_positions in enumerate(batch_robot_positions)
             if (full_obs := {k: v[i] for k, v in batch_full_obs.items()})
         ]
-        # batch_minimap_obs[batch_n][unit_n][obs_size]: Tensor (N_INPUTS x 12 x 12)
-        batch_unit_features = [
+
+        # calculate features for each robot using its job net
+        # batch_robot_features[batch_n].shape(): (n_robots, N_FEATURES)
+        batch_robot_features = [
             torch.cat([
-                add_batch_dimension(self.features_nets[job](obs))
-                for job, obs in zip(unit_jobs, unit_minimap_obs)
+                add_batch_dimension(self.job_nets[job](obs))
+                for job, obs in zip(robot_jobs, robot_mini_obs)
             ])
-            if len(unit_jobs) > 0
+            if len(robot_jobs) > 0
             else torch.zeros(0, N_FEATURES)
-            for unit_jobs, unit_minimap_obs in zip(batch_unit_jobs, batch_minimap_obs)
+            for robot_jobs, robot_mini_obs in zip(batch_robot_jobs, batch_mini_obs)
         ]
-        # batch_unit_features[batch_n]: Tensor (n_units x N_FEATURES)
-        return batch_unit_features
+
+        # perform masking
+        # padded_robot_features.shape(): (batch_size, MAX_ROBOTS, N_FEATURES)
+        batch_size = batch_full_obs["player_has_robot"].shape[0]
+        padded_robot_features = torch.zeros(
+            (batch_size, MAX_ROBOTS, N_FEATURES),
+            dtype=torch.float32
+        )
+        for i, robot_features in enumerate(batch_robot_features):
+            if len(robot_features) == 0:
+                continue
+            padded_robot_features[i, :len(robot_features)] = robot_features
+        return padded_robot_features
 
 
 class ActorCriticNet(nn.Module):
@@ -165,22 +149,14 @@ class ActorCriticNet(nn.Module):
             nn.ReLU(),
         )
 
-    def forward_actor(self, features: Tensor) -> Tensor:
-        return self.policy_net(features)
+    def forward_actor(self, batch_features: Tensor) -> Tensor:
+        return self.policy_net(batch_features)
 
-    def forward_critic(self, features: Tensor) -> Tensor:
-        return self.value_net(features)
+    def forward_critic(self, batch_features: Tensor) -> Tensor:
+        return self.value_net(batch_features)
 
-    def forward(self, batch_features: list[Tensor]) -> tuple[list[Tensor], list[Tensor]]:
-        batch_policies = [
-            self.forward_actor(features)
-            for features in batch_features
-        ]
-        batch_values = [
-            self.forward_critic(features)
-            for features in batch_features
-        ]
-        return batch_policies, batch_values
+    def forward(self, batch_features: Tensor) -> tuple[Tensor, Tensor]:
+        return self.forward_actor(batch_features), self.forward_critic(batch_features)
 
 
 class CustomActorCriticPolicy(ActorCriticPolicy):
@@ -226,3 +202,35 @@ def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
         tensorboard_log=args.log_path,
     )
     return model
+
+
+def load_weights(model: nn.Module, state_dict: Any) -> None:
+    # TODO: make weights load separately for each job type
+    net_keys = [
+        layer_name
+        for layer in [
+            "inception_1",
+            "inception_3",
+            "inception_5",
+            "conv_reduction_layer",
+            "skip_reduction_layer",
+            "fc_layer",
+        ]
+        for layer_name in [
+            f"features_extractor.net.{layer}.weight",
+            f"features_extractor.net.{layer}.bias",
+        ]
+    ] + [
+        layer_name
+        for layer_name in state_dict.keys()
+        if layer_name.startswith("mlp_extractor.")
+    ] + [
+        layer_name
+        for layer_name in state_dict.keys()
+        if layer_name.startswith("action_net.")
+    ]
+    loaded_state_dict = {}
+    for sb3_key, model_key in zip(net_keys, model.state_dict().keys()):
+        loaded_state_dict[model_key] = state_dict[sb3_key]
+        print("loaded", sb3_key, "->", model_key, file=sys.stderr)
+    model.load_state_dict(loaded_state_dict)

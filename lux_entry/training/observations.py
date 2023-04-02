@@ -9,6 +9,9 @@ from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 
 
+N_OBS_CHANNELS = 56
+
+
 per_map_tile_obs_keys = [
     # binary yes/no
     "has_ice",
@@ -170,6 +173,9 @@ def get_full_obs(
     }
 
     return obs
+
+
+N_MINIMAP_MAGNIFICATIONS = 4
 
 
 def get_minimap_obs(full_obs: dict[str, Tensor], pos: Tensor) -> list[Tensor]:

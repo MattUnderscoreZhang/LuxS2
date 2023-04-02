@@ -44,7 +44,7 @@ def make_env(
         )
         env = SolitaireWrapper(env, "player_0")
         env = RewardWrapper(env, "player_0", ice_mining_reward)
-        env = ObservationWrapper(env, "player_0")
+        env = NeuralObservationWrapper(env, "player_0")
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -204,6 +204,7 @@ class RewardWrapper(gym.Wrapper):
         Calculate metrics and reward, with info["metrics"] passed to Tensorboard in train.py.
         """
         self.keep_enemy_alive()
+        print(action)  # TODO: remove after testing
         obs, _, done, info = self.env.step(action)
         info["metrics"] = self.calculate_metrics()
         reward, self.prev_reward_calculations = self.reward(
@@ -220,7 +221,7 @@ class RewardWrapper(gym.Wrapper):
         return obs
 
 
-class ObservationWrapper(gym.ObservationWrapper):
+class NeuralObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, player: Player) -> None:
         super().__init__(env)
         self.env_cfg = self.env.state.env_cfg
