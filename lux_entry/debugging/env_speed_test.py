@@ -1,8 +1,8 @@
+import argparse
+from pathlib import Path
+
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from luxai_s2.map_generator.generator import argparse
-
-from lux_entry.lux.utils import add_batch_dimension
 from lux_entry.training.env import make_env
 from lux_entry.training.model import get_model
 
@@ -23,19 +23,16 @@ def check_env() -> None:
         learning_rate=0.0003,
         target_kl=0.05,
         gamma=0.99,
+        log_path=Path(__file__).parent / "logs",
     )
     model = get_model(env, args)
 
     for _ in range(100):
         obs = env.reset()
         step_n = 0
-        total_reward = 0
         for _ in range(10):
-            breakpoint()
-            obs = add_batch_dimension(obs)
-            action = 1
+            action = model.predict(obs)[0]
             obs, reward, done, _ = env.step(action)
-            total_reward += reward
 
             # # give title to entire figure
             # plt.figure()

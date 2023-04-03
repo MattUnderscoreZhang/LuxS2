@@ -2,6 +2,7 @@ import argparse
 from gym import spaces
 import torch
 from torch import nn, Tensor
+import torch.nn.functional as F
 from typing import Callable
 
 from stable_baselines3 import PPO
@@ -10,15 +11,116 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from lux_entry.lux.utils import add_batch_dimension
-from lux_entry.training.observations import (
-    get_minimap_obs, N_OBS_CHANNELS, N_MINIMAP_MAGNIFICATIONS
-)
+from lux_entry.training.observations import N_OBS_CHANNELS
 
 
 N_FEATURES = 64
+MAX_ROBOTS = 256
+N_MINIMAP_MAGNIFICATIONS = 4
+N_JOBS = 8
+
+
+def get_mini_obs(
+    batch_full_obs: dict[str, Tensor], batch_pos: list[list[Tensor]]
+) -> list[list[Tensor]]:
+    """
+    Create minimaps for a set of features around (x, y).
+    Return a list of four minimap magnifications, each with all features concated.
+    """
+    def _mean_pool(arr: Tensor, scale: int) -> Tensor:
+        # return F.avg_pool2d(arr, kernel_size=scale, stride=scale)
+        return F.interpolate(arr, scale_factor=scale, mode='bilinear', align_corners=True)
+
+    def _get_minimaps(
+        expanded_map: Tensor,
+        batch_pos: list[list[Tensor]]
+    ) -> list[list[Tensor]]:
+        minimaps = [
+            [
+                expanded_map[:, x-6:x+6, y-6:y+6],  # small map (12x12)
+                _mean_pool(expanded_map[:, x-12:x+12, y-12:y+12], 2),  # medium map (24x24)
+                _mean_pool(expanded_map[:, x-24:x+24, y-24:y+24], 4),  # large map (48x48)
+                _mean_pool(expanded_map[:, x-48:x+48, y-48:y+48], 8),  # full map (96x96)
+            ]
+            for pos in batch_pos
+            if (x := pos[0] + 48) and (y := pos[1] + 48)
+        ]
+        return minimaps
+
+    mini_obs = _get_minimaps(expanded_map, batch_pos)
+    return mini_obs
 
 
 class JobNet(nn.Module):
+    """
+    Figure out what job a unit at each location on the map should have.
+    Returns a Tensor of shape (batch_size, N_JOBS, 48, 48), where dim 1 is softmax-normalized.
+    """
+    def __init__(self):
+        super().__init__()
+        self.inception_1 = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 32, 1),
+            nn.Tanh(),
+        )
+        self.inception_3 = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 32, 3, padding=1),
+            nn.Tanh(),
+        )
+        self.inception_5 = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 32, 5, padding=2),
+            nn.Tanh(),
+        )
+        self.inception_7 = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 32, 7, padding=3),
+            nn.Tanh(),
+        )
+        self.map_reduction = nn.Sequential(
+            nn.Conv2d(128, 64, 3, stride=3),
+            nn.Tanh(),
+            nn.Conv2d(64, 16, 4, stride=2),
+            nn.Tanh(),
+            nn.Conv2d(16, 128, 7),
+            nn.Tanh(),
+            nn.Flatten(),
+        )
+        self.fc_layer_1 = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.Tanh(),
+        )
+        self.fc_layer_2 = nn.Sequential(
+            nn.Linear(128, 32),
+            nn.Tanh(),
+        )
+        self.role_finder = nn.Sequential(
+            nn.Conv2d(160, N_JOBS, 1),
+            nn.Softmax(dim=1),
+        )
+
+    def forward(self, batch_full_obs: Tensor) -> Tensor:
+        # for each map pixel, calculate features based on surrounding pixels
+        # batch_full_obs: (batch_size, N_OBS_CHANNELS, 48, 48)
+        x = torch.cat([
+            self.inception_1(batch_full_obs),
+            self.inception_3(batch_full_obs),
+            self.inception_5(batch_full_obs),
+            self.inception_7(batch_full_obs),
+        ], dim=1)
+        x = torch.tanh(x)  # (batch_size, 128, 48, 48)
+        batch_upgraded_full_obs = x
+        # calculate a feature vector that describes the whole map
+        x = self.map_reduction(x)  # (batch_size, 128)
+        x = self.fc_layer_1(x)  # (batch_size, 128)
+        x = self.fc_layer_2(x)  # (batch_size, 32)
+        # add feature vector to each map pixel
+        x = x.unsqueeze(-1).unsqueeze(-1)
+        x = x.expand(-1, -1, 48, 48)  # (batch_size, 32, 48, 48))
+        x = torch.cat([batch_upgraded_full_obs, x], dim=1)  # (batch_size, 160, 48, 48)
+        # calculate role logits per map pixel
+        x = self.role_finder(x)
+        return x
+
+
+class ActionNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.per_pixel_branch = nn.Sequential(
@@ -44,42 +146,27 @@ class JobNet(nn.Module):
         x = torch.tanh(x)
         x = self.fc_layer_2(x)
         x = torch.tanh(x)
-        # assert x.shape == (N_FEATURES, )
         return x
-
-
-jobs = [
-    "ice_miner",
-    "ore_miner",
-    "courier",
-    "sabateur",
-    "soldier",
-    "generalist",
-    "factory",
-]
-
-
-MAX_ROBOTS = 256
 
 
 class UnitsFeaturesExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict):
         super().__init__(observation_space, N_FEATURES)
         self.job_nets = {
-            job: JobNet()
-            for job in jobs
+            job: ActionNet()
+            for job in [
+                "ice_miner",
+                "ore_miner",
+                "courier",
+                "sabateur",
+                "soldier",
+                "berserker",
+                "generalist",
+                "factory",
+            ]
         }
         for job, net in self.job_nets.items():
             self.add_module(job, net)
-
-    def get_robot_jobs(self, batch_robot_positions: list[list[Tensor]]) -> list[list[str]]:
-        return [
-            [
-                "generalist"  # TODO: calculate robot jobs
-                for _ in robot_positions
-            ]
-            for robot_positions in batch_robot_positions
-        ]
 
     def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
         """
@@ -96,18 +183,17 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
 
         # calculate robot jobs
         # type(batch_robot_jobs[batch_n][robot_n]): str
-        batch_robot_jobs = self.get_robot_jobs(batch_robot_positions)
+        # batch_robot_jobs = self.get_robot_jobs(batch_robot_positions)
 
-        # get minimap observations
-        # batch_mini_obs[batch_n][robot_n][zoom_level].shape(): (N_OBS_CHANNELS, 12, 12)
-        batch_mini_obs = [
+        # get padded full map Tensor
+        # batch_expanded_obs.shape(): (batch_n, N_OBS_CHANNELS, 144, 144)
+        stacked_full_obs = torch.cat(
             [
-                get_minimap_obs(full_obs, robot_position)
-                for robot_position in robot_positions
-            ]
-            for i, robot_positions in enumerate(batch_robot_positions)
-            if (full_obs := {k: v[i] for k, v in batch_full_obs.items()})
-        ]
+                batch_full_obs[key]
+                for key in batch_full_obs.keys()
+            ], dim=1
+        )
+        # batch_expanded_obs = F.pad(stacked_full_obs, (48, 48, 48, 48), value=-1)
 
         # calculate features for each robot using its job net
         # batch_robot_features[batch_n].shape(): (n_robots, N_FEATURES)
@@ -188,41 +274,6 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.mlp_extractor = ActorCriticNet()
         self.action_net = nn.Identity()  # no Linear layer
         self.value_net = nn.Identity()  # no Linear layer
-
-    # def forward(self, obs: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        # """
-        # Forward pass in all the networks (value and policy) with
-        # gradient checkpointing during the forward pass.
-        # """
-        # features = self.extract_features(obs)
-        # latent_pi = self.mlp_extractor.forward_actor(features)
-        # latent_vf = self.mlp_extractor.forward_critic(features)
-        # values = self.value_net(latent_vf)
-        # dist = torch.distributions.Categorical(logits=latent_pi)
-        # action = dist.sample()
-        # log_prob = dist.log_prob(action).sum(-1)
-        # breakpoint()
-        # action = action.squeeze(-1)
-        # return action, values, log_prob
-    # def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
-        # """
-        # Forward pass in all the networks (actor and critic)
-
-        # :param obs: Observation
-        # :param deterministic: Whether to sample or use deterministic actions
-        # :return: action, value and log probability of the action
-        # """
-        # # Preprocess the observation if needed
-        # features = self.extract_features(obs)
-        # latent_pi = self.mlp_extractor.forward_actor(features)
-        # latent_vf = self.mlp_extractor.forward_critic(features)
-        # # Evaluate the values for the given observations
-        # values = self.value_net(latent_vf)
-        # distribution = self._get_action_dist_from_latent(latent_pi)
-        # actions = distribution.get_actions(deterministic=deterministic)
-        # log_prob = distribution.log_prob(actions)
-        # actions = actions.reshape((-1,) + self.action_space.shape)
-        # return actions, values, log_prob
 
 
 def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
