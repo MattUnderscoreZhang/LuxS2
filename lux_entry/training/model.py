@@ -13,7 +13,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from lux_entry.training.observations import N_OBS_CHANNELS
 
 
-N_FEATURES = 128
+N_FEATURES = 32
 N_MINIMAP_MAGNIFICATIONS = 4
 JOBS = [
     "ice_miner", "ore_miner", "courier", "sabateur",
@@ -60,16 +60,14 @@ class JobNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.map_reduction = nn.Sequential(
-            nn.Conv2d(N_FEATURES, 64, 3, stride=3),
+            nn.Conv2d(N_FEATURES, 16, 3, stride=3),
             nn.Tanh(),
-            nn.Conv2d(64, 16, 4, stride=2),
+            nn.Conv2d(16, 16, 4, stride=2),
             nn.Tanh(),
-            nn.Conv2d(16, 128, 7),
+            nn.Conv2d(16, 32, 7),
             nn.Tanh(),
             nn.Flatten(),
-            nn.Linear(128, 128),
-            nn.Tanh(),
-            nn.Linear(128, 32),
+            nn.Linear(32, 32),
             nn.Tanh(),
         )
         self.job_probs = nn.Sequential(
@@ -87,20 +85,18 @@ class JobNet(nn.Module):
 
 class JobActionNet(nn.Module):
     """
-    Make action decision based on information in surrounding 11x11 map grid.
+    Make action decision based on information in surrounding 9x9 map grid.
     Returns shape (batch_size, N_ACTIONS, 48, 48), where dim 1 is softmax-normalized.
     """
     def __init__(self):
         super().__init__()
         self.action_probs = nn.Sequential(
-            nn.Conv2d(128, 64, 1),
+            nn.Conv2d(N_FEATURES, 8, 1),
             nn.Tanh(),
-            nn.Conv2d(64, 8, 1),
+            nn.ConstantPad2d(padding=4, value=-1),
+            nn.Conv2d(8, 64, 9),
             nn.Tanh(),
-            nn.ConstantPad2d(padding=5, value=-1),
-            nn.Conv2d(8, 1024, 11),
-            nn.Tanh(),
-            nn.Conv2d(1024, N_ACTIONS, 1),
+            nn.Conv2d(64, N_ACTIONS, 1),
             nn.Softmax(dim=1),
         )
 

@@ -20,7 +20,7 @@ def perform_timing(func: Callable, n_trials: int = 100, func_name: str = "") -> 
         func()
     end = time()
     run_time = (end - start) / n_trials * 1000
-    if func_name is not "":
+    if func_name != "":
         print(f"\n{func_name} runs in {run_time} ms")
     return run_time
 
@@ -37,6 +37,11 @@ def test_layers():
         func = lambda: layer(batch_map_features)
         run_time = perform_timing(func, func_name=f"{name} layer")
         assert run_time < 10
+
+    val = nn.Conv2d(N_OBS_CHANNELS, n_channels, 1)(batch_map_features)
+    func = lambda: torch.cat([val, val, val, val], dim=1)
+    run_time = perform_timing(func, func_name="cat function")
+    assert run_time < 10
 
 
 def test_map_features_extractor():
