@@ -72,7 +72,7 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         for job, net in self.job_nets.items():
             self.add_module(job, net)
 
-    def get_robot_jobs(self, batch_robot_positions: list[Tensor]) -> list[list[str]]:
+    def get_robot_jobs(self, batch_robot_positions: list[list[Tensor]]) -> list[list[str]]:
         return [
             [
                 "generalist"  # TODO: calculate robot jobs
@@ -87,9 +87,10 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
         Output is padded to length MAX_ROBOTS.
         """
         # get robot positions
+        # sort by x position, then y position
         batch_has_robot = batch_full_obs["player_has_robot"][:,0]
         batch_robot_positions = [
-            torch.argwhere(robot_map)
+            sorted(torch.argwhere(robot_map), key=lambda x: (x[0], x[1]))
             for robot_map in batch_has_robot
         ]
 
@@ -137,25 +138,31 @@ class UnitsFeaturesExtractor(BaseFeaturesExtractor):
 class ActorCriticNet(nn.Module):
     def __init__(self):
         super().__init__()
-        LATENT_DIM = 64
-        self.latent_dim_pi = 64 * MAX_ROBOTS
-        self.latent_dim_vf = 64 * MAX_ROBOTS
+        PI_DIM = 64
+        VF_DIM = 64
+        N_ACTIONS = 12
+        self.latent_dim_pi = PI_DIM * MAX_ROBOTS
+        self.latent_dim_vf = VF_DIM * MAX_ROBOTS
         self.policy_net = nn.Sequential(
-            nn.Linear(N_FEATURES, LATENT_DIM),
+            nn.Linear(N_FEATURES, PI_DIM),
+            nn.ReLU(),
+            nn.Linear(PI_DIM, N_ACTIONS),
             nn.ReLU(),
         )
         self.value_net = nn.Sequential(
-            nn.Linear(N_FEATURES, LATENT_DIM),
+            nn.Linear(N_FEATURES, VF_DIM),
+            nn.ReLU(),
+            nn.Linear(VF_DIM, 1),
             nn.ReLU(),
         )
 
     def forward_actor(self, batch_features: Tensor) -> Tensor:
         policy = self.policy_net(batch_features)
-        return policy.view(policy.shape[0], -1)
+        return policy.reshape(policy.shape[0], -1)
 
     def forward_critic(self, batch_features: Tensor) -> Tensor:
         value = self.value_net(batch_features)
-        return value.view(value.shape[0], -1)
+        return value.mean(dim=1).squeeze(-1)
 
     def forward(self, batch_features: Tensor) -> tuple[Tensor, Tensor]:
         return self.forward_actor(batch_features), self.forward_critic(batch_features)
@@ -178,11 +185,44 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
             *args,
             **kwargs,
         )
-        # Disable orthogonal initialization
-        self.ortho_init = False
-
-    def _build_mlp_extractor(self) -> None:
         self.mlp_extractor = ActorCriticNet()
+        self.action_net = nn.Identity()  # no Linear layer
+        self.value_net = nn.Identity()  # no Linear layer
+
+    # def forward(self, obs: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        # """
+        # Forward pass in all the networks (value and policy) with
+        # gradient checkpointing during the forward pass.
+        # """
+        # features = self.extract_features(obs)
+        # latent_pi = self.mlp_extractor.forward_actor(features)
+        # latent_vf = self.mlp_extractor.forward_critic(features)
+        # values = self.value_net(latent_vf)
+        # dist = torch.distributions.Categorical(logits=latent_pi)
+        # action = dist.sample()
+        # log_prob = dist.log_prob(action).sum(-1)
+        # breakpoint()
+        # action = action.squeeze(-1)
+        # return action, values, log_prob
+    # def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+        # """
+        # Forward pass in all the networks (actor and critic)
+
+        # :param obs: Observation
+        # :param deterministic: Whether to sample or use deterministic actions
+        # :return: action, value and log probability of the action
+        # """
+        # # Preprocess the observation if needed
+        # features = self.extract_features(obs)
+        # latent_pi = self.mlp_extractor.forward_actor(features)
+        # latent_vf = self.mlp_extractor.forward_critic(features)
+        # # Evaluate the values for the given observations
+        # values = self.value_net(latent_vf)
+        # distribution = self._get_action_dist_from_latent(latent_pi)
+        # actions = distribution.get_actions(deterministic=deterministic)
+        # log_prob = distribution.log_prob(actions)
+        # actions = actions.reshape((-1,) + self.action_space.shape)
+        # return actions, values, log_prob
 
 
 def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:

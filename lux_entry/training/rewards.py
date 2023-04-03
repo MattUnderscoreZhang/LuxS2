@@ -33,6 +33,7 @@ def ice_mining_reward(
             for factory_pos in factory_positions.values()
         ])
         for unit_id, unit in units.items()
+        if len(factory_positions) > 0
     }
     dist_to_nearest_ice = {
         unit_id: min([
@@ -40,6 +41,7 @@ def ice_mining_reward(
             for ice_pos in ice_positions
         ])
         for unit_id, unit in units.items()
+        if len(ice_positions) > 0
     }
     ice_in_factory = {
         factory_id: factory["cargo"]["ice"]

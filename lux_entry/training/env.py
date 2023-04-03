@@ -92,8 +92,8 @@ class BaseWrapper(gym.Wrapper):
         """
         lux_actions = {
             player: (
-                self.controller.action_to_lux_action(
-                    player=player, obs=self.prev_obs[player], action=player_actions[player]
+                self.controller.actions_to_lux_actions(
+                    player=player, obs=self.prev_obs[player], actions=player_actions[player]
                 )
                 if player in player_actions.keys() and self.prev_obs is not None
                 else dict()

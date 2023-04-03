@@ -76,26 +76,33 @@ class EnvController:
     def _get_dig_action(self, id):
         return np.array([3, 0, 0, 0, 0, 1])
 
-    def action_to_lux_action(
-        self, player: Player, obs: ObservationStateDict, action: np.ndarray
+    def actions_to_lux_actions(
+        self, player: Player, obs: ObservationStateDict, actions: np.ndarray
     ) -> dict[str, int]:
-        lux_action = dict()
+        # get units and sort by x position, then y position
+        # this makes the units order consistent with the actions passed from the model
         units = obs["units"][player]
-        for unit_id in units.keys():
-            unit = units[unit_id]
-            choice = action
+        units = dict(
+            sorted(
+                units.items(),
+                key=lambda x: (x[1]["pos"][0], x[1]["pos"][1]),
+            )
+        )
+
+        # get action for each unit
+        lux_actions = dict()
+        for (unit_id, unit), action in zip(units.items(), actions):
             action_queue = []
             no_op = False
-            if self._is_move_action(choice):
-                action_queue = [self._get_move_action(choice)]
-            elif self._is_transfer_action(choice):
-                action_queue = [self._get_transfer_action(choice)]
-            elif self._is_pickup_action(choice):
-                action_queue = [self._get_pickup_action(choice)]
-            elif self._is_dig_action(choice):
-                action_queue = [self._get_dig_action(choice)]
+            if self._is_move_action(action):
+                action_queue = [self._get_move_action(action)]
+            elif self._is_transfer_action(action):
+                action_queue = [self._get_transfer_action(action)]
+            elif self._is_pickup_action(action):
+                action_queue = [self._get_pickup_action(action)]
+            elif self._is_dig_action(action):
+                action_queue = [self._get_dig_action(action)]
             else:
-                # action is a no_op, so we don't update the action queue
                 no_op = True
 
             # simple trick to help units conserve power is to avoid updating the action queue
@@ -105,16 +112,20 @@ class EnvController:
                 if same_actions:
                     no_op = True
             if not no_op:
-                lux_action[unit_id] = action_queue
+                lux_actions[unit_id] = action_queue
 
-            break
-
+        # get action for each factory
         factories = obs["factories"][player]
         if len(units) == 0:
             for unit_id in factories.keys():
-                lux_action[unit_id] = 1  # build a single heavy
+                lux_actions[unit_id] = 1  # build a single heavy
 
-        return lux_action
+        # print(
+            # "FACTORIES: " + str(list(factories.keys())) + "\n" +
+            # "UNITS: " + str(list(units.keys())) + "\n" +
+            # "ACTIONS: " + str(lux_actions) + "\n"
+        # )
+        return lux_actions
 
     def action_masks(self, player: Player, obs: ObservationStateDict) -> np.ndarray:
         """
