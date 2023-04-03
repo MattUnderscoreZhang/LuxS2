@@ -28,6 +28,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
     Input is (batch_size, N_OBS_CHANNELS, 48, 48). Output is (batch_size, N_FEATURES * 48 * 48).
     """
     def __init__(self, observation_space: spaces.Dict):
+        # TODO: figure out what's going on with dimensions
         super().__init__(observation_space, N_FEATURES * 48 * 48)
         n_channels = int(N_FEATURES / 4)
         self.inception_1 = nn.Conv2d(N_OBS_CHANNELS, n_channels, 1)
@@ -37,6 +38,9 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
 
     def forward(self, batch_full_obs: Tensor) -> Tensor:
         batch_full_obs = torch.cat([v for v in batch_full_obs.values()], dim=1)
+        return self._forward(batch_full_obs)
+
+    def _forward(self, batch_full_obs: Tensor) -> Tensor:
         x = torch.cat([
             self.inception_1(batch_full_obs),
             self.inception_3(batch_full_obs),

@@ -47,6 +47,7 @@ class EnvController:
 
         self.total_act_dims = self.no_op_dim_high
         map_size = env_cfg.map_size
+        self.map_size = map_size
         self.action_space = spaces.MultiDiscrete([self.total_act_dims] * map_size * map_size)
 
     def _is_move_action(self, id):
@@ -88,12 +89,15 @@ class EnvController:
                 key=lambda x: (x[1]["pos"][0], x[1]["pos"][1]),
             )
         )
+        actions = actions.reshape(self.map_size, self.map_size)
 
         # get action for each unit
         lux_actions = dict()
-        for (unit_id, unit), action in zip(units.items(), actions):
+        for unit_id, unit in units.items():
             action_queue = []
             no_op = False
+            pos = unit["pos"]
+            action = actions[pos[0], pos[1]]
             if self._is_move_action(action):
                 action_queue = [self._get_move_action(action)]
             elif self._is_transfer_action(action):
