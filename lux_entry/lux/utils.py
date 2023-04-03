@@ -1,5 +1,5 @@
 import numpy as np
-import torch
+from torch import Tensor
 from typing import Any, Dict, Union
 
 from luxai_s2.state.state import ObservationStateDict
@@ -166,11 +166,12 @@ def add_batch_dimension(x: Any) -> Any:
     The input Tensor or Tensor dict is converted to numpy format.
     An extra batch dimension is added to the numpy array.
     """
+    # assert type(x) in [Tensor, dict[str, Tensor]]
     if type(x) == dict:
         x = {
-            key: value.float().unsqueeze(0)  # adding batch dimension
+            key: value.unsqueeze(0)  # adding batch dimension
             for key, value in x.items()
         }
     else:
-        x = torch.from_numpy(x).float().unsqueeze(0)
+        x = x.unsqueeze(0)
     return x

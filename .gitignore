@@ -10,3 +10,4 @@ luxai_s2
 __pycache__
 *.svg
 .DS_Store
+singularity_logs

@@ -1,9 +1,11 @@
 from luxai_s2.state import ObservationStateDict
 
+from lux_entry.lux.state import Player
 
-def build_single_heavy(agent, obs: ObservationStateDict):
+
+def build_single_heavy(agent, obs: ObservationStateDict, player: Player):  # TODO: double check this function
     actions = dict()
-    if agent == "player_0":
+    if agent == player:
         factories = obs["factories"][agent]
         units = obs["units"][agent]
         if len(units) == 0:

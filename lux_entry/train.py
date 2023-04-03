@@ -1,6 +1,4 @@
 import argparse
-import importlib
-import os.path as osp
 from pathlib import Path
 import yaml
 
@@ -9,6 +7,9 @@ from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecVideoRecorder
+
+from lux_entry.training.env import make_env
+from lux_entry.training.model import get_model
 
 
 class TensorboardCallback(BaseCallback):
@@ -29,12 +30,12 @@ class TensorboardCallback(BaseCallback):
 
 def train(args: argparse.Namespace, model: BaseAlgorithm):
     eval_env = SubprocVecEnv(
-        [args.make_env(i, max_episode_steps=1000) for i in range(4)]
+        [make_env(i, max_episode_steps=1000) for i in range(4)]
     )
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=osp.join(args.log_path, "models"),
-        log_path=osp.join(args.log_path, "eval_logs"),
+        best_model_save_path=args.log_path / "models",
+        log_path=args.log_path / "eval_logs",
         eval_freq=args.eval_freq,
         deterministic=False,
         render=False,
@@ -44,18 +45,18 @@ def train(args: argparse.Namespace, model: BaseAlgorithm):
         args.total_timesteps,
         callback=[TensorboardCallback(tag="train_metrics"), eval_callback],
     )
-    model.save(osp.join(args.log_path, "models/latest_model"))
+    model.save(args.log_path / "models" / "latest_model")
 
 
 def evaluate(args: argparse.Namespace, model: BaseAlgorithm):
-    model = model.load(args.model_path)
+    model = model.load(args.weights_path)
     video_length = 1000  # default horizon
     eval_env = SubprocVecEnv(
-        [args.make_env(i, max_episode_steps=1000) for i in range(args.n_envs)]
+        [make_env(i, max_episode_steps=1000) for i in range(args.n_envs)]
     )
     eval_env = VecVideoRecorder(
         eval_env,
-        osp.join(args.log_path, "eval_videos"),
+        args.log_path / "eval_videos",
         record_video_trigger=lambda x: x == 0,
         video_length=video_length,
         name_prefix=f"evaluation_video",
@@ -69,28 +70,28 @@ def main(args: argparse.Namespace):
     print("Training with args", args)
     if args.seed is not None:
         set_random_seed(args.seed)
-    env = SubprocVecEnv(
+    env = SubprocVecEnv(  # TODO: pass things like reward functions into make_env for each lesson in curriculum
         [
-            args.make_env(i, max_episode_steps=args.max_episode_steps)
+            make_env(i, max_episode_steps=args.max_episode_steps)
             for i in range(args.n_envs)
         ]
     )
     env.reset()
+    model = get_model(env, args)
     if args.eval:
-        evaluate(args, args.model(env, args))
+        evaluate(args, model)
     else:
-        model = args.model(env, args)
         if args.continue_training:
-            model = model.load(args.model_path)
+            model = model.load(args.weights_path)
             model.set_env(env)
-        train(args, model)
+        train(args, model)  # TODO: instead of setting up model and training once, set up models for each lesson in the curriculum
+
+
+WEIGHTS_PATH = Path(__file__).parent / "logs" / "models" / "best_model"
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-b", "--behavior", type=str, required=True, help="Behavior to train."
-    )
     parser.add_argument(
         "-c",
         "--training-conf",
@@ -115,23 +116,8 @@ if __name__ == "__main__":
         Path(__file__).parent / "train_configs" / (args.training_conf + ".yaml")
     ) as f:
         training_args = argparse.Namespace(**yaml.safe_load(f))
-    training_args.model = importlib.import_module(
-        f"lux_entry.behaviors.{args.behavior}.net"
-    ).model
-    training_args.make_env = importlib.import_module(
-        f"lux_entry.behaviors.{args.behavior}.env"
-    ).make_env
-    training_args.log_path = (
-        Path(__file__).parent / "behaviors" / args.behavior / "logs"
-    )
+    training_args.log_path = Path(__file__).parent / "logs"
+    training_args.weights_path = WEIGHTS_PATH
     training_args.eval = args.eval
     training_args.continue_training = not args.new_training
-    training_args.model_path = (
-        Path(__file__).parent
-        / "behaviors"
-        / args.behavior
-        / "logs"
-        / "models"
-        / "best_model.zip"
-    )
     main(training_args)

@@ -1,21 +1,20 @@
 from gym import spaces
 import numpy as np
-from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
-from lux_entry.components.types import Controller
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
+from lux_entry.training.model import MAX_ROBOTS
 
 
-class EnvController(Controller):
+class EnvController:
     def __init__(self, env_cfg: EnvConfig) -> None:
         """
-        A controller sets the action space, converts actions to Lux actions, and calculates action masks.
+        Set the action space, convert actions to Lux actions, and calculate action masks.
 
         This simple controller controls only a single robot.
-        It will always try to spawn one heavy robot if there are none regardless of action given.
+        It will always try to spawn one heavy robot if there are none.
 
         For the robot unit
         - 4 cardinal direction movement (4 dims)
@@ -32,8 +31,7 @@ class EnvController(Controller):
         - factory actions
         - transferring power or resources other than ice
 
-        To help understand how to this controller works to map one action space to the original lux action space,
-        see how the lux action space is defined in luxai_s2/spaces/action.py
+        For more info, see the lux action space definition in luxai_s2/spaces/action.py
         """
         self.env_cfg = env_cfg
         self.move_act_dims = 4
@@ -49,55 +47,62 @@ class EnvController(Controller):
         self.no_op_dim_high = self.dig_dim_high + self.no_op_dims
 
         self.total_act_dims = self.no_op_dim_high
-        action_space = spaces.Discrete(self.total_act_dims)
-        super().__init__(action_space)
+        self.action_space = spaces.MultiDiscrete([self.total_act_dims] * MAX_ROBOTS)
 
-    # TODO: this action controller is atrocious
-    def _is_move_action(self, id: np.int64) -> np.bool_:
+    def _is_move_action(self, id):
         return id < self.move_dim_high
 
-    def _get_move_action(self, id: np.int64) -> np.ndarray:
+    def _get_move_action(self, id):
         # move direction is id + 1 since we don't allow move center here
         return np.array([0, id + 1, 0, 0, 0, 1])
 
-    def _is_transfer_action(self, id: np.int64) -> np.bool_:
+    def _is_transfer_action(self, id):
         return id < self.transfer_dim_high
 
-    def _get_transfer_action(self, id: np.int64) -> np.ndarray:
+    def _get_transfer_action(self, id):
         id = id - self.move_dim_high
         transfer_dir = id % 5
         return np.array([1, transfer_dir, 0, self.env_cfg.max_transfer_amount, 0, 1])
 
-    def _is_pickup_action(self, id: np.int64) -> np.bool_:
+    def _is_pickup_action(self, id):
         return id < self.pickup_dim_high
 
-    def _get_pickup_action(self, id: np.int64) -> np.ndarray:
+    def _get_pickup_action(self, id):
         return np.array([2, 0, 4, self.env_cfg.max_transfer_amount, 0, 1])
 
-    def _is_dig_action(self, id: np.int64) -> np.bool_:
+    def _is_dig_action(self, id):
         return id < self.dig_dim_high
 
-    def _get_dig_action(self, id: np.int64) -> np.ndarray:
+    def _get_dig_action(self, id):
         return np.array([3, 0, 0, 0, 0, 1])
 
-    def action_to_lux_action(self, player: Player, obs: ObservationStateDict, action: np.int64) -> Dict[str, int]:
-        lux_action = dict()
+    def actions_to_lux_actions(
+        self, player: Player, obs: ObservationStateDict, actions: np.ndarray
+    ) -> dict[str, int]:
+        # get units and sort by x position, then y position
+        # this makes the units order consistent with the actions passed from the model
         units = obs["units"][player]
-        for unit_id in units.keys():
-            unit = units[unit_id]
-            choice = action
+        units = dict(
+            sorted(
+                units.items(),
+                key=lambda x: (x[1]["pos"][0], x[1]["pos"][1]),
+            )
+        )
+
+        # get action for each unit
+        lux_actions = dict()
+        for (unit_id, unit), action in zip(units.items(), actions):
             action_queue = []
             no_op = False
-            if self._is_move_action(choice):
-                action_queue = [self._get_move_action(choice)]
-            elif self._is_transfer_action(choice):
-                action_queue = [self._get_transfer_action(choice)]
-            elif self._is_pickup_action(choice):
-                action_queue = [self._get_pickup_action(choice)]
-            elif self._is_dig_action(choice):
-                action_queue = [self._get_dig_action(choice)]
+            if self._is_move_action(action):
+                action_queue = [self._get_move_action(action)]
+            elif self._is_transfer_action(action):
+                action_queue = [self._get_transfer_action(action)]
+            elif self._is_pickup_action(action):
+                action_queue = [self._get_pickup_action(action)]
+            elif self._is_dig_action(action):
+                action_queue = [self._get_dig_action(action)]
             else:
-                # action is a no_op, so we don't update the action queue
                 no_op = True
 
             # simple trick to help units conserve power is to avoid updating the action queue
@@ -107,24 +112,28 @@ class EnvController(Controller):
                 if same_actions:
                     no_op = True
             if not no_op:
-                lux_action[unit_id] = action_queue
+                lux_actions[unit_id] = action_queue
 
-            break
-
+        # get action for each factory
         factories = obs["factories"][player]
         if len(units) == 0:
             for unit_id in factories.keys():
-                lux_action[unit_id] = 1  # build a single heavy
+                lux_actions[unit_id] = 1  # build a single heavy
 
-        return lux_action
+        # print(
+            # "FACTORIES: " + str(list(factories.keys())) + "\n" +
+            # "UNITS: " + str(list(units.keys())) + "\n" +
+            # "ACTIONS: " + str(lux_actions) + "\n"
+        # )
+        return lux_actions
 
-    # TODO: factor this out if it's not being used during training
     def action_masks(self, player: Player, obs: ObservationStateDict) -> np.ndarray:
         """
-        Defines a simplified action mask for this controller's action space.
-        Doesn't account for whether robot has enough power.
-        Only appears to be used during evaluation, not training.
+        Defines a simplified action mask for this controller's action space
+
+        Doesn't account for whether robot has enough power
         """
+
         # compute a factory occupancy map that will be useful for checking if a board tile
         # has a factory and which team's factory it is.
         factory_occupancy_map = (
