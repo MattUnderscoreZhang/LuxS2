@@ -36,6 +36,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
         self.inception_7 = nn.Conv2d(N_OBS_CHANNELS, n_channels, 7, padding=3)
 
     def forward(self, batch_full_obs: Tensor) -> Tensor:
+        batch_full_obs = torch.cat([v for v in batch_full_obs.values()], dim=1)
         x = torch.cat([
             self.inception_1(batch_full_obs),
             self.inception_3(batch_full_obs),
@@ -43,7 +44,8 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             self.inception_7(batch_full_obs),
         ], dim=1)
         x = F.tanh(x)
-        return x.view(x.shape[0], -1)
+        # return x.view(x.shape[0], -1)
+        return x
 
 
 class JobNet(nn.Module):
@@ -114,19 +116,21 @@ class ActorCriticNet(nn.Module):
         self.value_layer = nn.Linear(32, 1)
 
     def forward_actor(self, batch_map_features: Tensor) -> Tensor:
+        batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
         job_probs = self.job_net(batch_map_features)
-        job_action_probs = torch.cat([
-            self.job_action_nets[job](batch_map_features) * job_probs[:, job].unsqueeze(1)
-            for job in JOBS
+        job_action_probs = torch.stack([
+            self.job_action_nets[job](batch_map_features) * job_probs[:, i].unsqueeze(1)
+            for i, job in enumerate(JOBS)
         ], dim=1)
+        job_action_probs = job_action_probs.sum(dim=1)
         return job_action_probs.reshape(job_action_probs.shape[0], -1)
 
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
+        batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
         batch_map_features = self.job_net.map_reduction(batch_map_features)
         return self.value_layer(batch_map_features)
 
     def forward(self, batch_map_features: Tensor) -> tuple[Tensor, Tensor]:
-        batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
         return self.forward_actor(batch_map_features), self.forward_critic(batch_map_features)
 
 
