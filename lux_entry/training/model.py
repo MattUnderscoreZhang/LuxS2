@@ -14,10 +14,7 @@ from lux_entry.training.observations import N_OBS_CHANNELS
 
 N_MAP_FEATURES = 128
 N_MINIMAP_MAGNIFICATIONS = 4
-JOBS = [
-    "ice_miner", "ore_miner", "courier", "sabateur",
-    "soldier", "berserker", "generalist", "factory"
-]
+ROBOT_JOBS = ["ice_miner", "ore_miner", "courier", "sabateur", "soldier", "berserker"]
 N_ACTIONS = 12
 
 
@@ -80,12 +77,12 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
 class JobNet(nn.Module):
     """
     Figure out what job a unit at each location on the map should have.
-    Returns Tensor of shape (batch_size, len(JOBS), 48, 48), where dim 1 is softmax-normalized.
+    Returns Tensor of shape (batch_size, len(ROBOT_JOBS), 48, 48). dim 1 is softmax-normalized.
     """
     def __init__(self):
         super().__init__()
         self.job_probs = nn.Sequential(
-            nn.Conv2d(N_MAP_FEATURES, len(JOBS), 1),
+            nn.Conv2d(N_MAP_FEATURES, len(ROBOT_JOBS), 1),
             nn.Softmax(dim=1),
         )
 
@@ -117,7 +114,7 @@ class ActorCriticNet(nn.Module):
         self.latent_dim_pi = N_ACTIONS * 48 * 48
         self.latent_dim_vf = 1
         self.job_net = JobNet()
-        self.job_action_nets = {job: JobActionNet() for job in JOBS}
+        self.job_action_nets = {job: JobActionNet() for job in ROBOT_JOBS + ["factory"]}
         for job, net in self.job_action_nets.items():
             self.add_module(job, net)
         self.value_calculation = nn.Sequential(
@@ -133,33 +130,30 @@ class ActorCriticNet(nn.Module):
 
     def forward_actor(self, batch_map_features: Tensor) -> Tensor:
         batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
-        # perform unit masking
+        # get units - robots take precedence in action calculations
         my_factories = batch_map_features[:, 0].unsqueeze(1)
         my_robots = batch_map_features[:, 1].unsqueeze(1)
-        my_factories = my_factories * (1 - my_robots)  # robots take precedence in action calc
+        my_factories = my_factories * (1 - my_robots)
+        # perform masking
         factory_map_features = batch_map_features * my_robots
         robot_map_features = batch_map_features * my_robots
-        # find best job for each robot
+        # find best job and action for each robot
         # TODO: multiply robot_job_mask
         robot_job_probs = self.job_net(robot_map_features)
-        # find best action based on job
-        robot_action_probs = [
+        robot_action_probs = torch.stack([
             self.job_action_nets[job](robot_map_features)
-            for job in JOBS
-            if job != "factory"
-        ]
-        factory_action_probs = self.job_action_nets["factory"](factory_map_features)
-        job_weighted_robot_action_probs = torch.stack([
-            robot_action_probs[job] * robot_job_probs[:, job].unsqueeze(1)
-            for job in range(len(JOBS) - 1)
+            for job in ROBOT_JOBS
         ], dim=1)
-        job_action_probs = torch.sum(
-            job_weighted_robot_action_probs, dim=1
-        ) + factory_action_probs
-        # perform unit masking again
-        my_units = torch.logical_or(my_factories, my_robots)
-        job_action_probs = job_action_probs * my_units
-        return job_action_probs.view(job_action_probs.shape[0], -1)
+        robot_action_probs = robot_action_probs * robot_job_probs.unsqueeze(2)
+        robot_action_probs = robot_action_probs.sum(dim=1)
+        # find best action for each factory
+        factory_action_probs = self.job_action_nets["factory"](factory_map_features)
+        # get final actions
+        action_probs = (
+            robot_action_probs * my_robots +
+            factory_action_probs * my_factories
+        )
+        return action_probs.view(action_probs.shape[0], -1)
 
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
         batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
