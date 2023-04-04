@@ -2,7 +2,6 @@ import argparse
 from gym import spaces
 import torch
 from torch import nn, Tensor
-from torch.nn import functional as F
 from typing import Callable
 
 from stable_baselines3 import PPO
@@ -13,7 +12,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from lux_entry.training.observations import N_OBS_CHANNELS
 
 
-N_FEATURES = 32
+N_MAP_FEATURES = 128
 N_MINIMAP_MAGNIFICATIONS = 4
 JOBS = [
     "ice_miner", "ore_miner", "courier", "sabateur",
@@ -25,30 +24,56 @@ N_ACTIONS = 12
 class MapFeaturesExtractor(BaseFeaturesExtractor):
     """
     Upgrade per-pixel map information by calculating more features using surrounding pixels.
-    Input is (batch_size, N_OBS_CHANNELS, 48, 48). Output is (batch_size, N_FEATURES * 48 * 48).
+    Input is (batch_size, N_OBS_CHANNELS, 48, 48).
+    Output is (batch_size, N_MAP_FEATURES * 48 * 48).
     """
     def __init__(self, observation_space: spaces.Dict):
-        # TODO: figure out what's going on with dimensions
-        super().__init__(observation_space, N_FEATURES * 48 * 48)
-        n_channels = int(N_FEATURES / 4)
-        self.inception_1 = nn.Conv2d(N_OBS_CHANNELS, n_channels, 1)
-        self.inception_3 = nn.Conv2d(N_OBS_CHANNELS, n_channels, 3, padding=1)
-        self.inception_5 = nn.Conv2d(N_OBS_CHANNELS, n_channels, 5, padding=2)
-        self.inception_7 = nn.Conv2d(N_OBS_CHANNELS, n_channels, 7, padding=3)
+        super().__init__(observation_space, N_MAP_FEATURES * 48 * 48)
+        N_LAYER_FEATURES = 16
+        self.single_pixel_features = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, N_LAYER_FEATURES, 1),
+            nn.Tanh(),
+        )
+        self.local_area_features = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 16, 3, padding=1),
+            nn.Tanh(),
+            nn.Conv2d(16, N_LAYER_FEATURES, 3, dilation=1, padding='same'),
+            nn.Tanh(),
+        )
+        self.map_reduction_features = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 16, 3, stride=3),
+            nn.Tanh(),
+            nn.Conv2d(16, 16, 4, stride=2),
+            nn.Tanh(),
+            nn.Conv2d(16, 32, 7),
+            nn.Tanh(),
+            nn.Flatten(),
+            nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - 2 - N_LAYER_FEATURES * 2),
+            nn.Tanh(),
+        )
 
-    def forward(self, batch_full_obs: Tensor) -> Tensor:
-        batch_full_obs = torch.cat([v for v in batch_full_obs.values()], dim=1)
-        return self._forward(batch_full_obs)
-
-    def _forward(self, batch_full_obs: Tensor) -> Tensor:
+    def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
+        x = torch.cat([v for v in batch_full_obs.values()], dim=1)
+        # TODO: remove after testing
+        batch_full_obs["player_has_factory"][0, 0, 1, 3] = 1
+        batch_full_obs["player_has_factory"][0, 0, 2, 3] = 1
+        batch_full_obs["player_has_robot"][0, 0, 2, 3] = 1
+        batch_full_obs["player_has_robot"][0, 0, 3, 1] = 1
+        batch_full_obs["player_has_robot"][0, 0, 3, 4] = 1
+        # place my units as the first channels, to use for masking later
+        my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
+        my_robots = batch_full_obs["player_has_robot"][:, 0].unsqueeze(1)
+        # calculate a feature vector that describes the whole map, and broadcast to each pixel
+        map_features = self.map_reduction_features(x)
+        map_features = map_features.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 48, 48)
         x = torch.cat([
-            self.inception_1(batch_full_obs),
-            self.inception_3(batch_full_obs),
-            self.inception_5(batch_full_obs),
-            self.inception_7(batch_full_obs),
+            my_factories,
+            my_robots,
+            x,
+            self.single_pixel_features(x),
+            self.local_area_features(x),
+            map_features,
         ], dim=1)
-        x = F.tanh(x)
-        # return x.view(x.shape[0], -1)
         return x
 
 
@@ -59,42 +84,24 @@ class JobNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        self.map_reduction = nn.Sequential(
-            nn.Conv2d(N_FEATURES, 16, 3, stride=3),
-            nn.Tanh(),
-            nn.Conv2d(16, 16, 4, stride=2),
-            nn.Tanh(),
-            nn.Conv2d(16, 32, 7),
-            nn.Tanh(),
-            nn.Flatten(),
-            nn.Linear(32, 32),
-            nn.Tanh(),
-        )
         self.job_probs = nn.Sequential(
-            nn.Conv2d(N_FEATURES + 32, len(JOBS), 1),
+            nn.Conv2d(N_MAP_FEATURES, len(JOBS), 1),
             nn.Softmax(dim=1),
         )
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
-        # calculate a feature vector that describes the whole map, and broadcast to each pixel
-        x = self.map_reduction(batch_map_features)  # (batch_size, 32)
-        x = x.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 48, 48)  # (batch_size, 32, 48, 48)
-        x = torch.cat([batch_map_features, x], dim=1)  # (batch_size, N_FEATURES + 32, 48, 48)
-        return self.job_probs(x)
+        return self.job_probs(batch_map_features)
 
 
 class JobActionNet(nn.Module):
     """
-    Make action decision based on information in surrounding 9x9 map grid.
+    Make per-pixel action decisions. Pixels features already contain info about surroundings.
     Returns shape (batch_size, N_ACTIONS, 48, 48), where dim 1 is softmax-normalized.
     """
     def __init__(self):
         super().__init__()
         self.action_probs = nn.Sequential(
-            nn.Conv2d(N_FEATURES, 8, 1),
-            nn.Tanh(),
-            nn.ConstantPad2d(padding=4, value=-1),
-            nn.Conv2d(8, 64, 9),
+            nn.Conv2d(N_MAP_FEATURES, 64, 1),
             nn.Tanh(),
             nn.Conv2d(64, N_ACTIONS, 1),
             nn.Softmax(dim=1),
@@ -113,22 +120,50 @@ class ActorCriticNet(nn.Module):
         self.job_action_nets = {job: JobActionNet() for job in JOBS}
         for job, net in self.job_action_nets.items():
             self.add_module(job, net)
-        self.value_layer = nn.Linear(32, 1)
+        self.value_calculation = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 32, 2),
+            nn.Tanh(),
+            nn.Conv2d(32, 16, 2),
+            nn.Tanh(),
+            nn.Conv2d(16, 8, 4),
+            nn.Tanh(),
+            nn.Flatten(),
+            nn.Linear(72, 1),
+        )
 
     def forward_actor(self, batch_map_features: Tensor) -> Tensor:
         batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
-        job_probs = self.job_net(batch_map_features)
-        job_action_probs = torch.stack([
-            self.job_action_nets[job](batch_map_features) * job_probs[:, i].unsqueeze(1)
-            for i, job in enumerate(JOBS)
+        # perform unit masking
+        my_factories = batch_map_features[:, 0].unsqueeze(1)
+        my_robots = batch_map_features[:, 1].unsqueeze(1)
+        my_factories = my_factories * (1 - my_robots)  # robots take precedence in action calc
+        factory_map_features = batch_map_features * my_robots
+        robot_map_features = batch_map_features * my_robots
+        # find best job for each robot
+        # TODO: multiply robot_job_mask
+        robot_job_probs = self.job_net(robot_map_features)
+        # find best action based on job
+        robot_action_probs = [
+            self.job_action_nets[job](robot_map_features)
+            for job in JOBS
+            if job != "factory"
+        ]
+        factory_action_probs = self.job_action_nets["factory"](factory_map_features)
+        job_weighted_robot_action_probs = torch.stack([
+            robot_action_probs[job] * robot_job_probs[:, job].unsqueeze(1)
+            for job in range(len(JOBS) - 1)
         ], dim=1)
-        job_action_probs = job_action_probs.sum(dim=1)
-        return job_action_probs.reshape(job_action_probs.shape[0], -1)
+        job_action_probs = torch.sum(
+            job_weighted_robot_action_probs, dim=1
+        ) + factory_action_probs
+        # perform unit masking again
+        my_units = torch.logical_or(my_factories, my_robots)
+        job_action_probs = job_action_probs * my_units
+        return job_action_probs.view(job_action_probs.shape[0], -1)
 
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
         batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
-        batch_map_features = self.job_net.map_reduction(batch_map_features)
-        return self.value_layer(batch_map_features)
+        return self.value_calculation(batch_map_features)
 
     def forward(self, batch_map_features: Tensor) -> tuple[Tensor, Tensor]:
         return self.forward_actor(batch_map_features), self.forward_critic(batch_map_features)

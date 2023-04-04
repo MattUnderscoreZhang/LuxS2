@@ -7,6 +7,7 @@ from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
 
 
+# TODO: add all actions
 class EnvController:
     def __init__(self, env_cfg: EnvConfig) -> None:
         """

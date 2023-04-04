@@ -66,6 +66,9 @@ def evaluate(args: argparse.Namespace, model: BaseAlgorithm):
     print(out)
 
 
+# TODO: set up curriculum training with different heuristics, rewards, and net parameters
+# TODO: set up net parameters to selectively freeze/unfreeze weights, including job action nets
+# TODO: set up action masking as part of curriculum
 def main(args: argparse.Namespace):
     print("Training with args", args)
     if args.seed is not None:

@@ -15,10 +15,7 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
 from lux_entry.training.controller import EnvController
-from lux_entry.training.observations import (
-    get_full_obs,
-    get_full_obs_space,
-)
+from lux_entry.training.observations import get_full_obs, get_full_obs_space
 from lux_entry.training.rewards import ice_mining_reward
 
 
