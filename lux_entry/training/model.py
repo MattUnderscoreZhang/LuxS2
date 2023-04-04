@@ -8,6 +8,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
+from torch.distributions import Distribution
 
 from lux_entry.training.observations import N_OBS_CHANNELS
 
@@ -44,7 +45,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             nn.Tanh(),
             nn.Conv2d(16, 32, 7),
             nn.Tanh(),
-            nn.Flatten(),
+            nn.Flatten(start_dim=1),
             nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - 2 - N_LAYER_FEATURES * 2),
             nn.Tanh(),
         )
@@ -111,8 +112,6 @@ class JobActionNet(nn.Module):
 class ActorCriticNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.latent_dim_pi = N_ACTIONS * 48 * 48
-        self.latent_dim_vf = 1
         self.job_net = JobNet()
         self.job_action_nets = {job: JobActionNet() for job in ROBOT_JOBS + ["factory"]}
         for job, net in self.job_action_nets.items():
@@ -124,7 +123,7 @@ class ActorCriticNet(nn.Module):
             nn.Tanh(),
             nn.Conv2d(16, 8, 4),
             nn.Tanh(),
-            nn.Flatten(),
+            nn.Flatten(start_dim=1),
             nn.Linear(72, 1),
         )
 
@@ -148,12 +147,12 @@ class ActorCriticNet(nn.Module):
         robot_action_probs = robot_action_probs.sum(dim=1)
         # find best action for each factory
         factory_action_probs = self.job_action_nets["factory"](factory_map_features)
-        # get final actions
+        # return action probabilities
         action_probs = (
             robot_action_probs * my_robots +
             factory_action_probs * my_factories
-        )
-        return action_probs.view(action_probs.shape[0], -1)
+        ).permute(0, 2, 3, 1)
+        return action_probs
 
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
         batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
@@ -176,6 +175,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.mlp_extractor = ActorCriticNet()
         self.action_net = nn.Identity()  # no additional Linear layer
         self.value_net = nn.Identity()  # no additional Linear layer
+
+    # overriding this method to avoid using the slow default distribution
+    def _get_action_dist_from_latent(self, latent_pi: Tensor) -> Distribution:
+        class MyDistribution(torch.distributions.Categorical):
+            def get_actions(self, deterministic: bool = False) -> Tensor:
+                return self.sample() if deterministic else self.mode
+        return MyDistribution(logits=latent_pi)
 
 
 def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
