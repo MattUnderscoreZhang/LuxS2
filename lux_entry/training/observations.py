@@ -165,8 +165,6 @@ def get_full_obs(
         / (CYCLE_LEN - DAY_LEN)
     )
     obs["game_time_elapsed"][0] += env_obs["real_env_steps"] / MAX_EPISODE_LEN
-    # assert [k for k in obs.keys()] == obs_keys
-    # assert obs["has_ice"].shape == (1, 48, 48)
     obs = {
         key: torch.from_numpy(value).float()
         for key, value in obs.items()

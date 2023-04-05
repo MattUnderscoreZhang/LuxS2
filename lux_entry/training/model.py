@@ -27,18 +27,12 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
     """
     def __init__(self, observation_space: spaces.Dict):
         super().__init__(observation_space, N_MAP_FEATURES * 48 * 48)
-        N_LAYER_FEATURES = 16
+        N_LAYER_FEATURES = 32
         self.single_pixel_features = nn.Sequential(
             nn.Conv2d(N_OBS_CHANNELS, N_LAYER_FEATURES, 1),
             nn.Tanh(),
         )
-        self.local_area_features = nn.Sequential(
-            nn.Conv2d(N_OBS_CHANNELS, 16, 3, padding=1),
-            nn.Tanh(),
-            nn.Conv2d(16, N_LAYER_FEATURES, 3, dilation=1, padding='same'),
-            nn.Tanh(),
-        )
-        self.map_reduction_features = nn.Sequential(
+        self.whole_map_features = nn.Sequential(
             nn.Conv2d(N_OBS_CHANNELS, 16, 3, stride=3),
             nn.Tanh(),
             nn.Conv2d(16, 16, 4, stride=2),
@@ -46,28 +40,34 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             nn.Conv2d(16, 32, 7),
             nn.Tanh(),
             nn.Flatten(),
-            # TODO: remove the -2 here once I've removed the duplicated channels
-            nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - 2 - N_LAYER_FEATURES * 2),
+            nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - N_LAYER_FEATURES),  # * 2),
             nn.Tanh(),
         )
 
     def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
-        x = torch.cat([v for v in batch_full_obs.values()], dim=1)
         # place my units as the first channels, to use for masking later
-        # TODO: just move these channels to the front, instead of duplicating them
         my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
+        opp_factories = batch_full_obs["player_has_factory"][:, 1].unsqueeze(1)
         my_robots = batch_full_obs["player_has_robot"][:, 0].unsqueeze(1)
+        opp_robots = batch_full_obs["player_has_robot"][:, 1].unsqueeze(1)
+        batch_full_obs.pop("player_has_factory")
+        batch_full_obs.pop("player_has_robot")
+        x = torch.cat(
+            [my_factories, my_robots, opp_factories, opp_robots] +
+            [v for v in batch_full_obs.values()], dim=1
+        )
         # calculate a feature vector that describes the whole map, and broadcast to each pixel
-        map_features = self.map_reduction_features(x)
-        map_features = map_features.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 48, 48)
+        whole_map_features = (
+            self.whole_map_features(x)
+            .unsqueeze(-1)
+            .unsqueeze(-1)
+            .expand(-1, -1, 48, 48)
+        )
         # TODO: put masks on what map feature sets to calculate and use
         x = torch.cat([
-            my_factories,
-            my_robots,
             x,
             self.single_pixel_features(x),
-            self.local_area_features(x),
-            map_features,
+            whole_map_features,
         ], dim=1)
         return x
 
@@ -79,13 +79,30 @@ class JobNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
+        self.nearby_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 32, 1),
+            nn.Tanh(),
+            nn.Conv2d(32, 16, 1),
+            nn.Tanh(),
+            nn.Conv2d(16, 8, 5, padding=2),
+        )
+        self.distant_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 16, 1),
+            nn.Tanh(),
+            nn.Conv2d(16, 4, 1),
+            nn.Tanh(),
+            nn.Conv2d(4, 8, 11, padding=5),
+        )
         self.job_probs = nn.Sequential(
-            nn.Conv2d(N_MAP_FEATURES, len(ROBOT_JOBS), 1),
+            nn.Conv2d(16, len(ROBOT_JOBS), 1),
             nn.Softmax(dim=1),
         )
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
-        return self.job_probs(batch_map_features)
+        nearby_features = self.nearby_features(batch_map_features)
+        distant_features = self.distant_features(batch_map_features)
+        all_features = torch.cat([nearby_features, distant_features], dim=1)
+        return self.job_probs(all_features)
 
 
 class JobActionNet(nn.Module):
@@ -95,15 +112,29 @@ class JobActionNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        self.action_logits = nn.Sequential(
-            nn.Conv2d(N_MAP_FEATURES, 64, 1),
+        self.nearby_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 32, 1),
             nn.Tanh(),
-            nn.Conv2d(64, N_ACTIONS, 1),
+            nn.Conv2d(32, 16, 1),
+            nn.Tanh(),
+            nn.Conv2d(16, 8, 5, padding=2),
         )
+        self.distant_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 16, 1),
+            nn.Tanh(),
+            nn.Conv2d(16, 4, 1),
+            nn.Tanh(),
+            nn.Conv2d(4, 8, 11, padding=5),
+        )
+        self.action_logits = nn.Conv2d(16, N_ACTIONS, 1)
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
-        action_logits = self.action_logits(batch_map_features)
-        norm_action_logits = action_logits / action_logits.sum(dim=1, keepdim=True)
+        nearby_features = self.nearby_features(batch_map_features)
+        distant_features = self.distant_features(batch_map_features)
+        all_features = torch.cat([nearby_features, distant_features], dim=1)
+        action_logits = self.action_logits(all_features)
+        normalization = action_logits.sum(dim=1, keepdim=True).clamp(min=1e-6)
+        norm_action_logits = action_logits / normalization
         return norm_action_logits
 
 
@@ -135,18 +166,15 @@ class ActorCriticNet(nn.Module):
         my_factories = batch_map_features[:, 0].unsqueeze(1)
         my_robots = batch_map_features[:, 1].unsqueeze(1)
         my_factories = my_factories * (1 - my_robots)
-        # perform masking
-        factory_map_features = batch_map_features * my_robots
-        robot_map_features = batch_map_features * my_robots
         # find best job and action for each robot
-        robot_job_probs = self.job_net(robot_map_features)
+        robot_job_probs = self.job_net(batch_map_features)
         action_map_size = torch.Size([
             batch_map_features.shape[0],
             N_ACTIONS,
             *batch_map_features.shape[2:],
         ])
         robot_action_logits = torch.stack([
-            self.job_action_nets[i](robot_map_features)
+            self.job_action_nets[i](batch_map_features)
             if active
             else torch.zeros(action_map_size)
             for i, active in enumerate(self.robot_job_active)
@@ -154,7 +182,7 @@ class ActorCriticNet(nn.Module):
         robot_action_logits = robot_action_logits * robot_job_probs.unsqueeze(2)
         robot_action_logits = robot_action_logits.sum(dim=1)
         # find best action for each factory
-        factory_action_logits = self.job_action_nets[-1](factory_map_features)
+        factory_action_logits = self.job_action_nets[-1](batch_map_features)
         # return action logits
         action_logits = (
             robot_action_logits * my_robots +
