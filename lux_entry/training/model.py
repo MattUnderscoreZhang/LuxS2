@@ -2,13 +2,13 @@ import argparse
 from gym import spaces
 import torch
 from torch import nn, Tensor
+from torch.distributions import Distribution
 from typing import Callable
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from torch.distributions import Distribution
 
 from lux_entry.training.observations import N_OBS_CHANNELS
 
@@ -45,19 +45,13 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             nn.Tanh(),
             nn.Conv2d(16, 32, 7),
             nn.Tanh(),
-            nn.Flatten(start_dim=1),
+            nn.Flatten(),
             nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - 2 - N_LAYER_FEATURES * 2),
             nn.Tanh(),
         )
 
     def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
         x = torch.cat([v for v in batch_full_obs.values()], dim=1)
-        # TODO: remove after testing
-        batch_full_obs["player_has_factory"][0, 0, 1, 3] = 1
-        batch_full_obs["player_has_factory"][0, 0, 2, 3] = 1
-        batch_full_obs["player_has_robot"][0, 0, 2, 3] = 1
-        batch_full_obs["player_has_robot"][0, 0, 3, 1] = 1
-        batch_full_obs["player_has_robot"][0, 0, 3, 4] = 1
         # place my units as the first channels, to use for masking later
         my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
         my_robots = batch_full_obs["player_has_robot"][:, 0].unsqueeze(1)
@@ -94,19 +88,20 @@ class JobNet(nn.Module):
 class JobActionNet(nn.Module):
     """
     Make per-pixel action decisions. Pixels features already contain info about surroundings.
-    Returns shape (batch_size, N_ACTIONS, 48, 48), where dim 1 is softmax-normalized.
+    Returns shape (batch_size, N_ACTIONS, 48, 48), where dim 1 is normalized.
     """
     def __init__(self):
         super().__init__()
-        self.action_probs = nn.Sequential(
+        self.action_logits = nn.Sequential(
             nn.Conv2d(N_MAP_FEATURES, 64, 1),
             nn.Tanh(),
             nn.Conv2d(64, N_ACTIONS, 1),
-            nn.Softmax(dim=1),
         )
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
-        return self.action_probs(batch_map_features)
+        action_logits = self.action_logits(batch_map_features)
+        norm_action_logits = action_logits / action_logits.sum(dim=1, keepdim=True)
+        return norm_action_logits
 
 
 class ActorCriticNet(nn.Module):
@@ -117,13 +112,13 @@ class ActorCriticNet(nn.Module):
         for job, net in self.job_action_nets.items():
             self.add_module(job, net)
         self.value_calculation = nn.Sequential(
-            nn.Conv2d(N_MAP_FEATURES, 32, 2),
+            nn.Conv2d(N_MAP_FEATURES, 32, 2, stride=2),
             nn.Tanh(),
-            nn.Conv2d(32, 16, 2),
+            nn.Conv2d(32, 16, 2, stride=2),
             nn.Tanh(),
-            nn.Conv2d(16, 8, 4),
+            nn.Conv2d(16, 8, 4, stride=4),
             nn.Tanh(),
-            nn.Flatten(start_dim=1),
+            nn.Flatten(),
             nn.Linear(72, 1),
         )
 
@@ -139,23 +134,23 @@ class ActorCriticNet(nn.Module):
         # find best job and action for each robot
         # TODO: multiply robot_job_mask
         robot_job_probs = self.job_net(robot_map_features)
-        robot_action_probs = torch.stack([
+        # TODO: normalize logits after unit masking to be more efficient
+        robot_action_logits = torch.stack([
             self.job_action_nets[job](robot_map_features)
             for job in ROBOT_JOBS
         ], dim=1)
-        robot_action_probs = robot_action_probs * robot_job_probs.unsqueeze(2)
-        robot_action_probs = robot_action_probs.sum(dim=1)
+        robot_action_logits = robot_action_logits * robot_job_probs.unsqueeze(2)
+        robot_action_logits = robot_action_logits.sum(dim=1)
         # find best action for each factory
-        factory_action_probs = self.job_action_nets["factory"](factory_map_features)
-        # return action probabilities
-        action_probs = (
-            robot_action_probs * my_robots +
-            factory_action_probs * my_factories
-        ).permute(0, 2, 3, 1)
-        return action_probs
+        factory_action_logits = self.job_action_nets["factory"](factory_map_features)
+        # return action logits
+        action_logits = (
+            robot_action_logits * my_robots +
+            factory_action_logits * my_factories
+        )
+        return action_logits
 
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
-        batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
         return self.value_calculation(batch_map_features)
 
     def forward(self, batch_map_features: Tensor) -> tuple[Tensor, Tensor]:
@@ -176,12 +171,31 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         self.action_net = nn.Identity()  # no additional Linear layer
         self.value_net = nn.Identity()  # no additional Linear layer
 
-    # overriding this method to avoid using the slow default distribution
     def _get_action_dist_from_latent(self, latent_pi: Tensor) -> Distribution:
+        # much faster than default Distribution
         class MyDistribution(torch.distributions.Categorical):
             def get_actions(self, deterministic: bool = False) -> Tensor:
-                return self.sample() if deterministic else self.mode
-        return MyDistribution(logits=latent_pi)
+                params: Tensor = self._param
+                actions = (
+                    torch.argmax(params, dim=-1)
+                    if deterministic
+                    else super().sample()
+                )
+                return actions.view(params.shape[0], -1)
+
+            # TODO: may need to rethink calculation due to huge KL divergence
+            def log_prob(self, actions: Tensor) -> Tensor:
+                params: Tensor = self._param
+                actions = actions.view(params.shape[0], 48, 48).long()
+                log_probs = params.log_softmax(dim=-1)
+                action_log_probs = (
+                    log_probs.gather(-1, actions.unsqueeze(-1))
+                    .squeeze(-1).sum(dim=(1,2))
+                )
+                return action_log_probs
+
+        action_logits = latent_pi.permute(0, 2, 3, 1).contiguous()
+        return MyDistribution(logits=action_logits)
 
 
 def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
