@@ -219,14 +219,13 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                 )
                 return actions.view(params.shape[0], -1)
 
-            # TODO: may need to rethink calculation due to huge KL divergence
             def log_prob(self, actions: Tensor) -> Tensor:
                 params: Tensor = self._param
                 actions = actions.view(params.shape[0], 48, 48).long()
                 log_probs = params.log_softmax(dim=-1)
                 action_log_probs = (
                     log_probs.gather(-1, actions.unsqueeze(-1))
-                    .squeeze(-1).sum(dim=(1,2))
+                    .squeeze(-1).mean(dim=(1,2))  # using mean to avoid huge KL div
                 )
                 return action_log_probs
 

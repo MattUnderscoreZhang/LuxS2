@@ -55,11 +55,12 @@ def ice_mining_reward(
     H_CAR_SPACE = env_cfg.ROBOTS["HEAVY"].CARGO_SPACE
     cargo_full = {
         unit_id: (
-            unit["cargo"]["ice"] == L_CAR_SPACE
+            total_cargo == L_CAR_SPACE
             if unit["unit_type"] == "LIGHT"
-            else unit["cargo"]["ice"] == H_CAR_SPACE
+            else total_cargo == H_CAR_SPACE
         )
         for unit_id, unit in units.items()
+        if (total_cargo := unit["cargo"]["ice"] + unit["cargo"]["ore"])
     }
 
     reward = 0
