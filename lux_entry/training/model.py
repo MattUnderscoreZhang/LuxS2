@@ -79,30 +79,17 @@ class JobNet(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        self.nearby_features = nn.Sequential(
+        self.job_probs = nn.Sequential(
             nn.Conv2d(N_MAP_FEATURES, 32, 1),
             nn.Tanh(),
-            nn.Conv2d(32, 16, 1),
+            nn.Conv2d(32, 8, 1),
             nn.Tanh(),
-            nn.Conv2d(16, 8, 5, padding=2),
-        )
-        self.distant_features = nn.Sequential(
-            nn.Conv2d(N_MAP_FEATURES, 16, 1),
-            nn.Tanh(),
-            nn.Conv2d(16, 4, 1),
-            nn.Tanh(),
-            nn.Conv2d(4, 8, 11, padding=5),
-        )
-        self.job_probs = nn.Sequential(
-            nn.Conv2d(16, len(ROBOT_JOBS), 1),
+            nn.Conv2d(8, len(ROBOT_JOBS), 9, padding=4),
             nn.Softmax(dim=1),
         )
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
-        nearby_features = self.nearby_features(batch_map_features)
-        distant_features = self.distant_features(batch_map_features)
-        all_features = torch.cat([nearby_features, distant_features], dim=1)
-        return self.job_probs(all_features)
+        return self.job_probs(batch_map_features)
 
 
 class JobActionNet(nn.Module):
@@ -119,19 +106,28 @@ class JobActionNet(nn.Module):
             nn.Tanh(),
             nn.Conv2d(16, 8, 5, padding=2),
         )
-        self.distant_features = nn.Sequential(
+        self.medium_features = nn.Sequential(
             nn.Conv2d(N_MAP_FEATURES, 16, 1),
             nn.Tanh(),
-            nn.Conv2d(16, 4, 1),
+            nn.Conv2d(16, 8, 1),
             nn.Tanh(),
-            nn.Conv2d(4, 8, 11, padding=5),
+            nn.Conv2d(8, 4, 9, padding=4),
+        )
+        self.distant_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 8, 1),
+            nn.Tanh(),
+            nn.Conv2d(8, 2, 1),
+            nn.Tanh(),
+            nn.Conv2d(2, 4, 11, padding=5),
         )
         self.action_logits = nn.Conv2d(16, N_ACTIONS, 1)
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
-        nearby_features = self.nearby_features(batch_map_features)
-        distant_features = self.distant_features(batch_map_features)
-        all_features = torch.cat([nearby_features, distant_features], dim=1)
+        all_features = torch.cat([
+            self.nearby_features(batch_map_features),
+            self.medium_features(batch_map_features),
+            self.distant_features(batch_map_features),
+        ], dim=1)
         action_logits = self.action_logits(all_features)
         normalization = action_logits.sum(dim=1, keepdim=True).clamp(min=1e-6)
         norm_action_logits = action_logits / normalization
