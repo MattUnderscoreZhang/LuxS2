@@ -46,6 +46,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             nn.Conv2d(16, 32, 7),
             nn.Tanh(),
             nn.Flatten(),
+            # TODO: remove the -2 here once I've removed the duplicated channels
             nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - 2 - N_LAYER_FEATURES * 2),
             nn.Tanh(),
         )
@@ -53,11 +54,13 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
     def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
         x = torch.cat([v for v in batch_full_obs.values()], dim=1)
         # place my units as the first channels, to use for masking later
+        # TODO: just move these channels to the front, instead of duplicating them
         my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
         my_robots = batch_full_obs["player_has_robot"][:, 0].unsqueeze(1)
         # calculate a feature vector that describes the whole map, and broadcast to each pixel
         map_features = self.map_reduction_features(x)
         map_features = map_features.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, 48, 48)
+        # TODO: put masks on what map feature sets to calculate and use
         x = torch.cat([
             my_factories,
             my_robots,
@@ -108,9 +111,10 @@ class ActorCriticNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.job_net = JobNet()
-        self.job_action_nets = {job: JobActionNet() for job in ROBOT_JOBS + ["factory"]}
-        for job, net in self.job_action_nets.items():
+        self.job_action_nets = [JobActionNet() for _ in ROBOT_JOBS + ["factory"]]
+        for job, net in zip(ROBOT_JOBS + ["factory"], self.job_action_nets):
             self.add_module(job, net)
+        self.set_active_robot_jobs(["ice_miner"])
         self.value_calculation = nn.Sequential(
             nn.Conv2d(N_MAP_FEATURES, 32, 2, stride=2),
             nn.Tanh(),
@@ -122,6 +126,9 @@ class ActorCriticNet(nn.Module):
             nn.Linear(72, 1),
         )
 
+    def set_active_robot_jobs(self, active_nets: list[str]):
+        self.robot_job_active = [job in active_nets for job in ROBOT_JOBS]
+
     def forward_actor(self, batch_map_features: Tensor) -> Tensor:
         batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
         # get units - robots take precedence in action calculations
@@ -132,17 +139,22 @@ class ActorCriticNet(nn.Module):
         factory_map_features = batch_map_features * my_robots
         robot_map_features = batch_map_features * my_robots
         # find best job and action for each robot
-        # TODO: multiply robot_job_mask
         robot_job_probs = self.job_net(robot_map_features)
-        # TODO: normalize logits after unit masking to be more efficient
+        action_map_size = torch.Size([
+            batch_map_features.shape[0],
+            N_ACTIONS,
+            *batch_map_features.shape[2:],
+        ])
         robot_action_logits = torch.stack([
-            self.job_action_nets[job](robot_map_features)
-            for job in ROBOT_JOBS
+            self.job_action_nets[i](robot_map_features)
+            if active
+            else torch.zeros(action_map_size)
+            for i, active in enumerate(self.robot_job_active)
         ], dim=1)
         robot_action_logits = robot_action_logits * robot_job_probs.unsqueeze(2)
         robot_action_logits = robot_action_logits.sum(dim=1)
         # find best action for each factory
-        factory_action_logits = self.job_action_nets["factory"](factory_map_features)
+        factory_action_logits = self.job_action_nets[-1](factory_map_features)
         # return action logits
         action_logits = (
             robot_action_logits * my_robots +

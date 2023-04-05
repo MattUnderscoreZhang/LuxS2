@@ -105,7 +105,8 @@ def ice_mining_reward(
         }
         reward = sum([
             delta_dist_to_nearest_factory[unit_id] + ice_delivered[unit_id]
-            if prev_reward_calculations["cargo_full"][unit_id]
+            if unit_id in prev_reward_calculations["cargo_full"]
+            and prev_reward_calculations["cargo_full"][unit_id]
             else delta_dist_to_nearest_ice[unit_id] + ice_mined[unit_id]
             for unit_id in units.keys()
         ])
