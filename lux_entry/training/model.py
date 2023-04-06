@@ -2,6 +2,7 @@ import argparse
 from gym import spaces
 import torch
 from torch import nn, Tensor
+from torch.distributions import Distribution
 from typing import Callable
 
 from stable_baselines3 import PPO
@@ -9,163 +10,198 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from lux_entry.lux.utils import add_batch_dimension
-from lux_entry.training.observations import (
-    get_minimap_obs, N_OBS_CHANNELS, N_MINIMAP_MAGNIFICATIONS
-)
+from lux_entry.training.observations import N_OBS_CHANNELS
 
 
-N_FEATURES = 64
+N_MAP_FEATURES = 128
+N_MINIMAP_MAGNIFICATIONS = 4
+ROBOT_JOBS = ["ice_miner", "ore_miner", "courier", "sabateur", "soldier", "berserker"]
+N_ACTIONS = 12
 
 
-class JobNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.per_pixel_branch = nn.Sequential(
-            nn.Conv2d(N_OBS_CHANNELS, 32, 1),
-            nn.Tanh(),
-            nn.Conv2d(32, 8, 1),
-            nn.Tanh(),
-            nn.Conv2d(8, 8, 3, padding=1),
+class MapFeaturesExtractor(BaseFeaturesExtractor):
+    """
+    Upgrade per-pixel map information by calculating more features using surrounding pixels.
+    Input is (batch_size, N_OBS_CHANNELS, 48, 48).
+    Output is (batch_size, N_MAP_FEATURES * 48 * 48).
+    """
+    def __init__(self, observation_space: spaces.Dict):
+        super().__init__(observation_space, N_MAP_FEATURES * 48 * 48)
+        N_LAYER_FEATURES = 32
+        self.single_pixel_features = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, N_LAYER_FEATURES, 1),
             nn.Tanh(),
         )
-        self.fc_layer_1= nn.Linear(8 * N_MINIMAP_MAGNIFICATIONS * 12 * 12, 1024)
-        self.fc_layer_2= nn.Linear(1024, N_FEATURES)
+        self.whole_map_features = nn.Sequential(
+            nn.Conv2d(N_OBS_CHANNELS, 16, 3, stride=3),
+            nn.Tanh(),
+            nn.Conv2d(16, 16, 4, stride=2),
+            nn.Tanh(),
+            nn.Conv2d(16, 32, 7),
+            nn.Tanh(),
+            nn.Flatten(),
+            nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - N_LAYER_FEATURES),  # * 2),
+            nn.Tanh(),
+        )
 
-    def forward(self, minimap_obs: list[Tensor]) -> Tensor:
+    def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
+        # place my units as the first channels, to use for masking later
+        my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
+        opp_factories = batch_full_obs["player_has_factory"][:, 1].unsqueeze(1)
+        my_robots = batch_full_obs["player_has_robot"][:, 0].unsqueeze(1)
+        opp_robots = batch_full_obs["player_has_robot"][:, 1].unsqueeze(1)
+        batch_full_obs.pop("player_has_factory")
+        batch_full_obs.pop("player_has_robot")
+        x = torch.cat(
+            [my_factories, my_robots, opp_factories, opp_robots] +
+            [v for v in batch_full_obs.values()], dim=1
+        )
+        # calculate a feature vector that describes the whole map, and broadcast to each pixel
+        """
+        whole_map_features = (
+            self.whole_map_features(x)
+            .unsqueeze(-1)
+            .unsqueeze(-1)
+            .expand(-1, -1, 48, 48)
+        )
+        """
+        # TODO: put masks on what map feature sets to calculate and use
         x = torch.cat([
-            self.per_pixel_branch(magnification_obs)
-            if i == 0  # TODO: unfreeze other magnifications
-            else torch.zeros(8, 12, 12)
-            for i, magnification_obs in enumerate(minimap_obs)
-        ], dim=0)
-        x = x.view(-1)
-        x = self.fc_layer_1(x)
-        x = torch.tanh(x)
-        x = self.fc_layer_2(x)
-        x = torch.tanh(x)
-        # assert x.shape == (N_FEATURES, )
+            x,
+            torch.zeros(x.shape[0], 32, 48, 48),
+            # self.single_pixel_features(x),
+            torch.zeros(x.shape[0], N_MAP_FEATURES - N_OBS_CHANNELS - 32, 48, 48),
+            # whole_map_features,
+        ], dim=1)
         return x
 
 
-jobs = [
-    "ice_miner",
-    "ore_miner",
-    "courier",
-    "sabateur",
-    "soldier",
-    "generalist",
-    "factory",
-]
-
-
-MAX_ROBOTS = 256
-
-
-class UnitsFeaturesExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict):
-        super().__init__(observation_space, N_FEATURES)
-        self.job_nets = {
-            job: JobNet()
-            for job in jobs
-        }
-        for job, net in self.job_nets.items():
-            self.add_module(job, net)
-
-    def get_robot_jobs(self, batch_robot_positions: list[list[Tensor]]) -> list[list[str]]:
-        return [
-            [
-                "generalist"  # TODO: calculate robot jobs
-                for _ in robot_positions
-            ]
-            for robot_positions in batch_robot_positions
-        ]
-
-    def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
-        """
-        Use net to extract features for each robot based on its job.
-        Output is padded to length MAX_ROBOTS.
-        """
-        # get robot positions
-        # sort by x position, then y position
-        batch_has_robot = batch_full_obs["player_has_robot"][:,0]
-        batch_robot_positions = [
-            sorted(torch.argwhere(robot_map), key=lambda x: (x[0], x[1]))
-            for robot_map in batch_has_robot
-        ]
-
-        # calculate robot jobs
-        # type(batch_robot_jobs[batch_n][robot_n]): str
-        batch_robot_jobs = self.get_robot_jobs(batch_robot_positions)
-
-        # get minimap observations
-        # batch_mini_obs[batch_n][robot_n][zoom_level].shape(): (N_OBS_CHANNELS, 12, 12)
-        batch_mini_obs = [
-            [
-                get_minimap_obs(full_obs, robot_position)
-                for robot_position in robot_positions
-            ]
-            for i, robot_positions in enumerate(batch_robot_positions)
-            if (full_obs := {k: v[i] for k, v in batch_full_obs.items()})
-        ]
-
-        # calculate features for each robot using its job net
-        # batch_robot_features[batch_n].shape(): (n_robots, N_FEATURES)
-        batch_robot_features = [
-            torch.cat([
-                add_batch_dimension(self.job_nets[job](obs))
-                for job, obs in zip(robot_jobs, robot_mini_obs)
-            ])
-            if len(robot_jobs) > 0
-            else torch.zeros(0, N_FEATURES)
-            for robot_jobs, robot_mini_obs in zip(batch_robot_jobs, batch_mini_obs)
-        ]
-
-        # perform masking
-        # padded_robot_features.shape(): (batch_size, MAX_ROBOTS, N_FEATURES)
-        batch_size = batch_full_obs["player_has_robot"].shape[0]
-        padded_robot_features = torch.zeros(
-            (batch_size, MAX_ROBOTS, N_FEATURES),
-            dtype=torch.float32
+class JobNet(nn.Module):
+    """
+    Figure out what job a unit at each location on the map should have.
+    Returns Tensor of shape (batch_size, len(ROBOT_JOBS), 48, 48). dim 1 is softmax-normalized.
+    """
+    def __init__(self):
+        super().__init__()
+        self.job_probs = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 32, 1),
+            nn.Tanh(),
+            nn.Conv2d(32, 8, 1),
+            nn.Tanh(),
+            nn.Conv2d(8, len(ROBOT_JOBS), 9, padding=4),
+            nn.Softmax(dim=1),
         )
-        for i, robot_features in enumerate(batch_robot_features):
-            if len(robot_features) == 0:
-                continue
-            padded_robot_features[i, :len(robot_features)] = robot_features
-        return padded_robot_features
+
+    def forward(self, batch_map_features: Tensor) -> Tensor:
+        return self.job_probs(batch_map_features)
+
+
+class JobActionNet(nn.Module):
+    """
+    Make per-pixel action decisions. Pixels features already contain info about surroundings.
+    Returns shape (batch_size, N_ACTIONS, 48, 48), where dim 1 is normalized.
+    """
+    def __init__(self):
+        super().__init__()
+        self.nearby_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 32, 1),
+            nn.Tanh(),
+            nn.Conv2d(32, 16, 1),
+            nn.Tanh(),
+            nn.Conv2d(16, 8, 5, padding=2),
+        )
+        self.medium_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 16, 1),
+            nn.Tanh(),
+            nn.Conv2d(16, 8, 1),
+            nn.Tanh(),
+            nn.Conv2d(8, 4, 9, padding=4),
+        )
+        self.distant_features = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 8, 1),
+            nn.Tanh(),
+            nn.Conv2d(8, 2, 1),
+            nn.Tanh(),
+            nn.Conv2d(2, 4, 11, padding=5),
+        )
+        self.action_logits = nn.Conv2d(16, N_ACTIONS, 1)
+
+    def forward(self, batch_map_features: Tensor) -> Tensor:
+        all_features = torch.cat([
+            self.nearby_features(batch_map_features),
+            self.medium_features(batch_map_features),
+            self.distant_features(batch_map_features),
+        ], dim=1)
+        action_logits = self.action_logits(all_features)
+        normalization = action_logits.sum(dim=1, keepdim=True).clamp(min=1e-6)
+        norm_action_logits = action_logits / normalization
+        return norm_action_logits
 
 
 class ActorCriticNet(nn.Module):
     def __init__(self):
         super().__init__()
-        PI_DIM = 64
-        VF_DIM = 64
-        N_ACTIONS = 12
-        self.latent_dim_pi = PI_DIM * MAX_ROBOTS
-        self.latent_dim_vf = VF_DIM * MAX_ROBOTS
-        self.policy_net = nn.Sequential(
-            nn.Linear(N_FEATURES, PI_DIM),
-            nn.ReLU(),
-            nn.Linear(PI_DIM, N_ACTIONS),
-            nn.ReLU(),
-        )
-        self.value_net = nn.Sequential(
-            nn.Linear(N_FEATURES, VF_DIM),
-            nn.ReLU(),
-            nn.Linear(VF_DIM, 1),
-            nn.ReLU(),
+        self.job_net = JobNet()
+        self.job_action_nets = [JobActionNet() for _ in ROBOT_JOBS + ["factory"]]
+        for job, net in zip(ROBOT_JOBS + ["factory"], self.job_action_nets):
+            self.add_module(job, net)
+        self.set_active_robot_jobs(["ice_miner"])
+        self.value_calculation = nn.Sequential(
+            nn.Conv2d(N_MAP_FEATURES, 32, 2, stride=2),
+            nn.Tanh(),
+            nn.Conv2d(32, 16, 2, stride=2),
+            nn.Tanh(),
+            nn.Conv2d(16, 8, 4, stride=4),
+            nn.Tanh(),
+            nn.Flatten(),
+            nn.Linear(72, 1),
         )
 
-    def forward_actor(self, batch_features: Tensor) -> Tensor:
-        policy = self.policy_net(batch_features)
-        return policy.reshape(policy.shape[0], -1)
+    def set_active_robot_jobs(self, active_nets: list[str]):
+        self.robot_job_active = [job in active_nets for job in ROBOT_JOBS]
 
-    def forward_critic(self, batch_features: Tensor) -> Tensor:
-        value = self.value_net(batch_features)
-        return value.mean(dim=1).squeeze(-1)
+    def forward_actor(self, batch_map_features: Tensor) -> Tensor:
+        batch_map_features = batch_map_features.view(batch_map_features.shape[0], -1, 48, 48)
+        # get units - robots take precedence in action calculations
+        my_factories = batch_map_features[:, 0].unsqueeze(1)
+        my_robots = batch_map_features[:, 1].unsqueeze(1)
+        my_factories = my_factories * (1 - my_robots)
+        # find best job and action for each robot
+        """
+        robot_job_probs = self.job_net(batch_map_features)
+        """
+        action_map_size = torch.Size([
+            batch_map_features.shape[0],
+            N_ACTIONS,
+            *batch_map_features.shape[2:],
+        ])
+        robot_action_logits = self.job_action_nets[0](batch_map_features)
+        """
+        robot_action_logits = torch.stack([
+            self.job_action_nets[i](batch_map_features)
+            if active
+            else torch.zeros(action_map_size)
+            for i, active in enumerate(self.robot_job_active)
+        ], dim=1)
+        robot_action_logits = robot_action_logits * robot_job_probs.unsqueeze(2)
+        robot_action_logits = robot_action_logits.sum(dim=1)
+        """
+        # find best action for each factory
+        factory_action_logits = self.job_action_nets[-1](batch_map_features)
+        # return action logits
+        action_logits = (
+            robot_action_logits * my_robots +
+            factory_action_logits * my_factories
+        )
+        # TODO: normalize action logits correctly
+        # TODO: figure out how to get only unmasked action logits to matter
+        return action_logits
 
-    def forward(self, batch_features: Tensor) -> tuple[Tensor, Tensor]:
-        return self.forward_actor(batch_features), self.forward_critic(batch_features)
+    def forward_critic(self, batch_map_features: Tensor) -> Tensor:
+        return self.value_calculation(batch_map_features)
+
+    def forward(self, batch_map_features: Tensor) -> tuple[Tensor, Tensor]:
+        return self.forward_actor(batch_map_features), self.forward_critic(batch_map_features)
 
 
 class CustomActorCriticPolicy(ActorCriticPolicy):
@@ -177,52 +213,35 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
         *args,
         **kwargs,
     ):
-        super().__init__(
-            observation_space,
-            action_space,
-            lr_schedule,
-            # Pass remaining arguments to base class
-            *args,
-            **kwargs,
-        )
+        super().__init__(observation_space, action_space, lr_schedule, *args, **kwargs)
         self.mlp_extractor = ActorCriticNet()
-        self.action_net = nn.Identity()  # no Linear layer
-        self.value_net = nn.Identity()  # no Linear layer
+        self.action_net = nn.Identity()  # no additional Linear layer
+        self.value_net = nn.Identity()  # no additional Linear layer
 
-    # def forward(self, obs: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        # """
-        # Forward pass in all the networks (value and policy) with
-        # gradient checkpointing during the forward pass.
-        # """
-        # features = self.extract_features(obs)
-        # latent_pi = self.mlp_extractor.forward_actor(features)
-        # latent_vf = self.mlp_extractor.forward_critic(features)
-        # values = self.value_net(latent_vf)
-        # dist = torch.distributions.Categorical(logits=latent_pi)
-        # action = dist.sample()
-        # log_prob = dist.log_prob(action).sum(-1)
-        # breakpoint()
-        # action = action.squeeze(-1)
-        # return action, values, log_prob
-    # def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
-        # """
-        # Forward pass in all the networks (actor and critic)
+    def _get_action_dist_from_latent(self, latent_pi: Tensor) -> Distribution:
+        # much faster than default Distribution
+        class MyDistribution(torch.distributions.Categorical):
+            def get_actions(self, deterministic: bool = False) -> Tensor:
+                params: Tensor = self._param
+                actions = (
+                    torch.argmax(params, dim=-1)
+                    if deterministic
+                    else super().sample()
+                )
+                return actions.view(params.shape[0], -1)
 
-        # :param obs: Observation
-        # :param deterministic: Whether to sample or use deterministic actions
-        # :return: action, value and log probability of the action
-        # """
-        # # Preprocess the observation if needed
-        # features = self.extract_features(obs)
-        # latent_pi = self.mlp_extractor.forward_actor(features)
-        # latent_vf = self.mlp_extractor.forward_critic(features)
-        # # Evaluate the values for the given observations
-        # values = self.value_net(latent_vf)
-        # distribution = self._get_action_dist_from_latent(latent_pi)
-        # actions = distribution.get_actions(deterministic=deterministic)
-        # log_prob = distribution.log_prob(actions)
-        # actions = actions.reshape((-1,) + self.action_space.shape)
-        # return actions, values, log_prob
+            def log_prob(self, actions: Tensor) -> Tensor:
+                params: Tensor = self._param
+                actions = actions.view(params.shape[0], 48, 48).long()
+                log_probs = params.log_softmax(dim=-1)
+                action_log_probs = (
+                    log_probs.gather(-1, actions.unsqueeze(-1))
+                    .squeeze(-1).mean(dim=(1,2))  # using mean to avoid huge KL div
+                )
+                return action_log_probs
+
+        action_logits = latent_pi.permute(0, 2, 3, 1).contiguous()
+        return MyDistribution(logits=action_logits)
 
 
 def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
@@ -232,10 +251,7 @@ def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
         n_steps=args.rollout_steps // args.n_envs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        policy_kwargs={
-            "features_extractor_class": UnitsFeaturesExtractor,
-            # "net_arch": [64],
-        },
+        policy_kwargs={"features_extractor_class": MapFeaturesExtractor},
         verbose=1,
         n_epochs=2,
         target_kl=args.target_kl,

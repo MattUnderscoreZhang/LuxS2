@@ -165,56 +165,9 @@ def get_full_obs(
         / (CYCLE_LEN - DAY_LEN)
     )
     obs["game_time_elapsed"][0] += env_obs["real_env_steps"] / MAX_EPISODE_LEN
-    # assert [k for k in obs.keys()] == obs_keys
-    # assert obs["has_ice"].shape == (1, 48, 48)
     obs = {
         key: torch.from_numpy(value).float()
         for key, value in obs.items()
     }
 
     return obs
-
-
-N_MINIMAP_MAGNIFICATIONS = 4
-
-
-def get_minimap_obs(full_obs: dict[str, Tensor], pos: Tensor) -> list[Tensor]:
-    """
-    Create minimaps for a set of features around (x, y).
-    Return a list of four minimap magnifications, each with all features concated.
-    """
-    def _mean_pool(arr: Tensor, window: int) -> Tensor:
-        arr = arr.unfold(1, window, window).unfold(2, window, window)
-        return torch.mean(arr, dim=(3, 4))
-
-    def _get_minimaps(obs: Tensor, x: Tensor, y: Tensor) -> list[Tensor]:
-        n_players = obs.shape[0]
-        expanded_map = torch.full((n_players, 96, 96), -1.0)
-        # minimap = torch.zeros((n_players * 4, 12, 12))
-        for p in range(n_players):
-            # unit is in lower right pixel of upper left quadrant
-            expanded_map[p][x : x + 48, y : y + 48] = obs[p]
-        minimaps = [
-            expanded_map[:, 42:54, 42:54],  # small map (12x12 area)
-            _mean_pool(expanded_map[:, 36:60, 36:60], 2),  # medium map (24x24 area)
-            _mean_pool(expanded_map[:, 24:72, 24:72], 4),  # large map (48x48 area)
-            _mean_pool(expanded_map[:], 8),  # full map (96x96 area)
-        ]
-        # for minimap in minimaps:
-            # assert (
-                # len(minimap.shape) == 3
-                # # variable second dimension (n_players)
-                # and minimap.shape[1] == 12
-                # and minimap.shape[2] == 12
-            # )
-        return minimaps
-
-    mini_obs = {
-        key: _get_minimaps(value, pos[0], pos[1])
-        for key, value in full_obs.items()
-    }
-    mini_obs = [
-        torch.cat([mini_obs[key][i] for key in mini_obs.keys()], dim=0)
-        for i in range(4)
-    ]
-    return mini_obs

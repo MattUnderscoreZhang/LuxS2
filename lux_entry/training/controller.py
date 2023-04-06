@@ -5,9 +5,9 @@ from luxai_s2.state.state import ObservationStateDict
 
 from lux_entry.lux.config import EnvConfig
 from lux_entry.lux.state import Player
-from lux_entry.training.model import MAX_ROBOTS
 
 
+# TODO: add all actions
 class EnvController:
     def __init__(self, env_cfg: EnvConfig) -> None:
         """
@@ -47,7 +47,9 @@ class EnvController:
         self.no_op_dim_high = self.dig_dim_high + self.no_op_dims
 
         self.total_act_dims = self.no_op_dim_high
-        self.action_space = spaces.MultiDiscrete([self.total_act_dims] * MAX_ROBOTS)
+        map_size = env_cfg.map_size
+        self.map_size = map_size
+        self.action_space = spaces.MultiDiscrete([self.total_act_dims] * map_size * map_size)
 
     def _is_move_action(self, id):
         return id < self.move_dim_high
@@ -88,12 +90,15 @@ class EnvController:
                 key=lambda x: (x[1]["pos"][0], x[1]["pos"][1]),
             )
         )
+        actions = actions.reshape(self.map_size, self.map_size)
 
         # get action for each unit
         lux_actions = dict()
-        for (unit_id, unit), action in zip(units.items(), actions):
+        for unit_id, unit in units.items():
             action_queue = []
             no_op = False
+            pos = unit["pos"]
+            action = actions[pos[0], pos[1]]
             if self._is_move_action(action):
                 action_queue = [self._get_move_action(action)]
             elif self._is_transfer_action(action):

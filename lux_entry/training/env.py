@@ -15,10 +15,7 @@ from lux_entry.lux.state import Player
 from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
 from lux_entry.training.controller import EnvController
-from lux_entry.training.observations import (
-    get_full_obs,
-    get_full_obs_space,
-)
+from lux_entry.training.observations import get_full_obs, get_full_obs_space
 from lux_entry.training.rewards import ice_mining_reward
 
 
@@ -44,7 +41,7 @@ def make_env(
         )
         env = SolitaireWrapper(env, "player_0")
         env = RewardWrapper(env, "player_0", ice_mining_reward)
-        env = NeuralObservationWrapper(env, "player_0")
+        env = FullObservationWrapper(env, "player_0")
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         env = Monitor(env)  # for SB3 to allow it to record metrics
         env.reset(seed=seed + rank)
@@ -220,7 +217,7 @@ class RewardWrapper(gym.Wrapper):
         return obs
 
 
-class NeuralObservationWrapper(gym.ObservationWrapper):
+class FullObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env: gym.Env, player: Player) -> None:
         super().__init__(env)
         self.env_cfg = self.env.state.env_cfg
