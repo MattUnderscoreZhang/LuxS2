@@ -57,17 +57,21 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             [v for v in batch_full_obs.values()], dim=1
         )
         # calculate a feature vector that describes the whole map, and broadcast to each pixel
+        """
         whole_map_features = (
             self.whole_map_features(x)
             .unsqueeze(-1)
             .unsqueeze(-1)
             .expand(-1, -1, 48, 48)
         )
+        """
         # TODO: put masks on what map feature sets to calculate and use
         x = torch.cat([
             x,
-            self.single_pixel_features(x),
-            whole_map_features,
+            torch.zeros(x.shape[0], 32, 48, 48),
+            # self.single_pixel_features(x),
+            torch.zeros(x.shape[0], N_MAP_FEATURES - N_OBS_CHANNELS - 32, 48, 48),
+            # whole_map_features,
         ], dim=1)
         return x
 
@@ -163,12 +167,16 @@ class ActorCriticNet(nn.Module):
         my_robots = batch_map_features[:, 1].unsqueeze(1)
         my_factories = my_factories * (1 - my_robots)
         # find best job and action for each robot
+        """
         robot_job_probs = self.job_net(batch_map_features)
+        """
         action_map_size = torch.Size([
             batch_map_features.shape[0],
             N_ACTIONS,
             *batch_map_features.shape[2:],
         ])
+        robot_action_logits = self.job_action_nets[0](batch_map_features)
+        """
         robot_action_logits = torch.stack([
             self.job_action_nets[i](batch_map_features)
             if active
@@ -177,6 +185,7 @@ class ActorCriticNet(nn.Module):
         ], dim=1)
         robot_action_logits = robot_action_logits * robot_job_probs.unsqueeze(2)
         robot_action_logits = robot_action_logits.sum(dim=1)
+        """
         # find best action for each factory
         factory_action_logits = self.job_action_nets[-1](batch_map_features)
         # return action logits
@@ -184,6 +193,8 @@ class ActorCriticNet(nn.Module):
             robot_action_logits * my_robots +
             factory_action_logits * my_factories
         )
+        # TODO: normalize action logits correctly
+        # TODO: figure out how to get only unmasked action logits to matter
         return action_logits
 
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
