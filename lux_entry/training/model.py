@@ -45,6 +45,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
         )
 
     def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
+        # TODO: have observation also include bool for whether it's new (if so skip recalc)
         # place my units as the first channels, to use for masking later
         my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
         opp_factories = batch_full_obs["player_has_factory"][:, 1].unsqueeze(1)
@@ -201,6 +202,7 @@ class ActorCriticNet(nn.Module):
         return self.value_calculation(batch_map_features)
 
     def forward(self, batch_map_features: Tensor) -> tuple[Tensor, Tensor]:
+        # TODO: have features also include bool for whether it's new (if so skip recalc)
         return self.forward_actor(batch_map_features), self.forward_critic(batch_map_features)
 
 
@@ -228,23 +230,28 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
                     if deterministic
                     else super().sample()
                 )
+                actions *= unit_mask
+                # TODO: only extract value for single unit position
                 return actions.view(params.shape[0], -1)
 
             def log_prob(self, actions: Tensor) -> Tensor:
                 params: Tensor = self._param
                 actions = actions.view(params.shape[0], 48, 48).long()
                 log_probs = params.log_softmax(dim=-1)
-                action_log_probs = (
-                    log_probs.gather(-1, actions.unsqueeze(-1))
-                    .squeeze(-1).mean(dim=(1,2))  # using mean to avoid huge KL div
-                )
+                action_log_probs = log_probs.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
+                action_log_probs *= unit_mask
+                action_log_probs = action_log_probs.sum(dim=(1,2))
+                # TODO: only calculate value for single unit action
                 return action_log_probs
 
         action_logits = latent_pi.permute(0, 2, 3, 1).contiguous()
+        unit_mask = action_logits.sum(dim=-1) > 0
         return MyDistribution(logits=action_logits)
 
 
 def get_model(env: SubprocVecEnv, args: argparse.Namespace) -> PPO:
+    # TODO: write a new version of collect_rollouts in on_policy_algorithms of sb3
+    # which updates rewards only when all units have made their moves
     model = PPO(
         CustomActorCriticPolicy,
         env,

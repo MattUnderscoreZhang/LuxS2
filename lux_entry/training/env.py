@@ -227,3 +227,30 @@ class FullObservationWrapper(gym.ObservationWrapper):
 
     def observation(self, obs: ObservationStateDict) -> dict[str, Tensor]:
         return get_full_obs(obs, self.env_cfg, self.player, self.opponent)
+
+
+class SingleUnitControlWrapper(gym.Wrapper):
+    def __init__(self, env: gym.Env, player: Player) -> None:
+        super().__init__(env)
+        self.env_cfg = self.env.state.env_cfg
+        self.observation_space = get_full_obs_space(self.env_cfg)
+        self.player = player
+        self.opponent = "player_1" if player == "player_0" else "player_0"
+
+    def step(self, action: np.ndarray):
+        """
+        Return observation Tensors with the following appended:
+        - Boolean indicating whether this is a new game state.
+        - Tensor of shape (batch_size, 2) holding the position for a single unit per game.
+        Take
+        """
+        self.keep_enemy_alive()
+        obs, _, done, info = self.env.step(action)
+        info["metrics"] = self.calculate_metrics()
+        reward, self.prev_reward_calculations = self.reward(
+            obs=obs,
+            player=self.player,
+            env_cfg=self.env_cfg,
+            prev_reward_calculations=self.prev_reward_calculations,
+        )
+        return obs, reward, done, info
