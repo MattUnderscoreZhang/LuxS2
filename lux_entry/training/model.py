@@ -19,6 +19,9 @@ ROBOT_JOBS = ["ice_miner", "ore_miner", "courier", "sabateur", "soldier", "berse
 N_ACTIONS = 12
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 class MapFeaturesExtractor(BaseFeaturesExtractor):
     """
     Upgrade per-pixel map information by calculating more features using surrounding pixels.
@@ -31,7 +34,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
         self.single_pixel_features = nn.Sequential(
             nn.Conv2d(N_OBS_CHANNELS, N_LAYER_FEATURES, 1),
             nn.Tanh(),
-        )
+        ).to(device)
         self.whole_map_features = nn.Sequential(
             nn.Conv2d(N_OBS_CHANNELS, 16, 3, stride=3),
             nn.Tanh(),
@@ -42,7 +45,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             nn.Flatten(),
             nn.Linear(32, N_MAP_FEATURES - N_OBS_CHANNELS - N_LAYER_FEATURES),  # * 2),
             nn.Tanh(),
-        )
+        ).to(device)
 
     def forward(self, batch_full_obs: Dict[str, Tensor]) -> Tensor:
         # place my units as the first channels, to use for masking later
@@ -73,7 +76,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             torch.zeros(x.shape[0], N_MAP_FEATURES - N_OBS_CHANNELS - 32, 48, 48),
             # whole_map_features,
         ], dim=1)
-        return x
+        return x.to(device)
 
 
 class JobNet(nn.Module):
@@ -90,7 +93,7 @@ class JobNet(nn.Module):
             nn.Tanh(),
             nn.Conv2d(8, len(ROBOT_JOBS), 9, padding=4),
             nn.Softmax(dim=1),
-        )
+        ).to(device)
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
         return self.job_probs(batch_map_features)
@@ -109,22 +112,22 @@ class JobActionNet(nn.Module):
             nn.Conv2d(32, 16, 1),
             nn.Tanh(),
             nn.Conv2d(16, 8, 5, padding=2),
-        )
+        ).to(device)
         self.medium_features = nn.Sequential(
             nn.Conv2d(N_MAP_FEATURES, 16, 1),
             nn.Tanh(),
             nn.Conv2d(16, 8, 1),
             nn.Tanh(),
             nn.Conv2d(8, 4, 9, padding=4),
-        )
+        ).to(device)
         self.distant_features = nn.Sequential(
             nn.Conv2d(N_MAP_FEATURES, 8, 1),
             nn.Tanh(),
             nn.Conv2d(8, 2, 1),
             nn.Tanh(),
             nn.Conv2d(2, 4, 11, padding=5),
-        )
-        self.action_logits = nn.Conv2d(16, N_ACTIONS, 1)
+        ).to(device)
+        self.action_logits = nn.Conv2d(16, N_ACTIONS, 1).to(device)
 
     def forward(self, batch_map_features: Tensor) -> Tensor:
         all_features = torch.cat([
@@ -155,7 +158,7 @@ class ActorCriticNet(nn.Module):
             nn.Tanh(),
             nn.Flatten(),
             nn.Linear(72, 1),
-        )
+        ).to(device)
 
     def set_active_robot_jobs(self, active_nets: List[str]):
         self.robot_job_active = [job in active_nets for job in ROBOT_JOBS]
