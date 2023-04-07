@@ -99,7 +99,7 @@ if __name__ == "__main__":
         "-c",
         "--training-conf",
         type=str,
-        default="test_conf",
+        default="debug_conf",
         help="Training configurations.",
     )
     parser.add_argument(
