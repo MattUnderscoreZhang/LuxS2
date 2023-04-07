@@ -58,7 +58,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
         x = torch.cat(
             [my_factories, my_robots, opp_factories, opp_robots] +
             [v for v in batch_full_obs.values()], dim=1
-        )
+        ).to(device)
         # calculate a feature vector that describes the whole map, and broadcast to each pixel
         """
         whole_map_features = (
@@ -71,12 +71,12 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
         # TODO: put masks on what map feature sets to calculate and use
         x = torch.cat([
             x,
-            torch.zeros(x.shape[0], 32, 48, 48),
+            torch.zeros(x.shape[0], 32, 48, 48).to(device),
             # self.single_pixel_features(x),
-            torch.zeros(x.shape[0], N_MAP_FEATURES - N_OBS_CHANNELS - 32, 48, 48),
+            torch.zeros(x.shape[0], N_MAP_FEATURES - N_OBS_CHANNELS - 32, 48, 48).to(device),
             # whole_map_features,
         ], dim=1)
-        return x.to(device)
+        return x
 
 
 class JobNet(nn.Module):
