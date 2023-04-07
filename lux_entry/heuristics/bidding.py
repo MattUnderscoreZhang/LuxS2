@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing_extensions import TypedDict
 
 from luxai_s2.state import ObservationStateDict
 
