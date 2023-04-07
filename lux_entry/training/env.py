@@ -2,7 +2,7 @@ import gym
 from gym.wrappers.time_limit import TimeLimit
 import numpy as np
 from torch import Tensor
-from typing import Callable, Any
+from typing import Callable, Any, Dict, Tuple
 
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
@@ -74,12 +74,12 @@ class BaseWrapper(gym.Wrapper):
         self.prev_obs = None
 
     def step(
-        self, player_actions: dict[Player, np.ndarray]
-    ) -> tuple[
-        dict[Player, ObservationStateDict],  # obs
-        dict[Player, float],  # reward
-        dict[Player, bool],  # done
-        dict[Player, Any],  # info
+        self, player_actions: Dict[Player, np.ndarray]
+    ) -> Tuple[
+        Dict[Player, ObservationStateDict],  # obs
+        Dict[Player, float],  # reward
+        Dict[Player, bool],  # done
+        Dict[Player, Any],  # info
     ]:
         """
         Actions for one or more players are passed in, and are converted to Lux actions.
@@ -101,7 +101,7 @@ class BaseWrapper(gym.Wrapper):
         self.prev_obs = obs
         return obs, reward, done, info
 
-    def reset(self, **kwargs) -> dict[Player, ObservationStateDict]:
+    def reset(self, **kwargs) -> Dict[Player, ObservationStateDict]:
         """
         Reset the LuxAI_S2 environment.
         The bid and factory placement policies are used to play the first two game phases.
@@ -147,7 +147,7 @@ class SolitaireWrapper(gym.Wrapper):
         self.env = env
         self.player = player
 
-    def step(self, action: np.ndarray) -> tuple[
+    def step(self, action: np.ndarray) -> Tuple[
         ObservationStateDict,  # obs
         float,  # reward
         bool,  # done
@@ -157,7 +157,7 @@ class SolitaireWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step(player_actions)
         return obs[self.player], reward[self.player], done[self.player], info[self.player]
 
-    def reset(self, **kwargs) -> dict[Player, ObservationStateDict]:
+    def reset(self, **kwargs) -> Dict[Player, ObservationStateDict]:
         obs = self.env.reset(**kwargs)
         return obs[self.player]
 
@@ -218,7 +218,7 @@ class FullObservationWrapper(gym.ObservationWrapper):
         self.player = player
         self.opponent = "player_1" if player == "player_0" else "player_0"
 
-    def observation(self, obs: ObservationStateDict) -> dict[str, Tensor]:
+    def observation(self, obs: ObservationStateDict) -> Dict[str, Tensor]:
         return get_full_obs(obs, self.env_cfg, self.player, self.opponent)
 
 

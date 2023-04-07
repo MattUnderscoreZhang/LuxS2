@@ -3,7 +3,7 @@ import io
 import json
 import numpy as np
 import torch
-from typing import Any, Union
+from typing import Any, Union, Dict
 import zipfile
 
 from luxai_s2.state.state import ObservationStateDict
@@ -92,7 +92,7 @@ agent_prev_obs: dict[Player, Union[ObservationStateDict, None]] = dict()
 Json = Any
 
 
-def agent_fn(observation: Namespace, configurations: dict) -> Json:
+def agent_fn(observation: Namespace, configurations: Dict) -> Json:
     """
     agent definition for kaggle submission.
     """

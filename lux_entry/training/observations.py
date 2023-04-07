@@ -2,6 +2,7 @@ from gym import spaces
 import numpy as np
 import torch
 from torch import Tensor
+from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -77,7 +78,7 @@ def get_full_obs_space(env_cfg: EnvConfig) -> spaces.Dict:
 
 def get_full_obs(
     env_obs: ObservationStateDict, env_cfg: EnvConfig, player: Player, opponent: Player,
-) -> dict[str, Tensor]:
+) -> Dict[str, Tensor]:
     # normalization factors
     MAX_FACS = env_cfg.MAX_FACTORIES
     MAX_RUBBLE = env_cfg.MAX_RUBBLE

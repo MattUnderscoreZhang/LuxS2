@@ -1,5 +1,6 @@
 from gym import spaces
 import numpy as np
+from typing import Dict
 
 from luxai_s2.state.state import ObservationStateDict
 
@@ -81,7 +82,7 @@ class EnvController:
 
     def actions_to_lux_actions(
         self, player: Player, obs: ObservationStateDict, actions: np.ndarray
-    ) -> dict[str, int]:
+    ) -> Dict[str, int]:
         # TODO: make this select the action for a single unit and collect a dictionary
         # get units and sort by x position, then y position
         # this makes the units order consistent with the actions passed from the model
