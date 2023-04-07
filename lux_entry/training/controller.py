@@ -50,6 +50,7 @@ class EnvController:
         self.total_act_dims = self.no_op_dim_high
         map_size = env_cfg.map_size
         self.map_size = map_size
+        # TODO: make this take a single-unit action space, along with a location tuple
         self.action_space = spaces.MultiDiscrete([self.total_act_dims] * map_size * map_size)
 
     def _is_move_action(self, id):
@@ -82,6 +83,7 @@ class EnvController:
     def actions_to_lux_actions(
         self, player: Player, obs: ObservationStateDict, actions: np.ndarray
     ) -> Dict[str, int]:
+        # TODO: make this select the action for a single unit and collect a dictionary
         # get units and sort by x position, then y position
         # this makes the units order consistent with the actions passed from the model
         units = obs["units"][player]

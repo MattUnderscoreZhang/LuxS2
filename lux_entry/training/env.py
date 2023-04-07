@@ -12,7 +12,6 @@ from luxai_s2.state import ObservationStateDict
 
 from lux_entry.heuristics import bidding, factory_placement
 from lux_entry.lux.state import Player
-from lux_entry.lux.stats import StatsStateDict
 from lux_entry.lux.utils import my_turn_to_place_factory
 from lux_entry.training.controller import EnvController
 from lux_entry.training.observations import get_full_obs, get_full_obs_space
@@ -164,7 +163,12 @@ class SolitaireWrapper(gym.Wrapper):
 
 
 class RewardWrapper(gym.Wrapper):
-    def __init__(self, env: gym.Env, player: Player, reward: Callable) -> None:
+    def __init__(
+            self,
+            env: gym.Env,
+            player: Player,
+            reward_fn: Callable,
+        ) -> None:
         """
         Alters the environment between steps for training purposes.
         """
@@ -173,7 +177,7 @@ class RewardWrapper(gym.Wrapper):
         self.prev_reward_calculations = None
         self.player = player
         self.opponent = "player_1" if player == "player_0" else "player_0"
-        self.reward = reward
+        self.reward_fn = reward_fn
 
     def keep_enemy_alive(self):
         """
@@ -184,31 +188,20 @@ class RewardWrapper(gym.Wrapper):
         for factory in self.env.state.factories[self.opponent].values():
             factory.cargo.water = 1000
 
-    def calculate_metrics(self) -> Dict:
-        stats: StatsStateDict = self.env.state.stats[self.player]
-        metrics = {
-            "total_ice_dug": (
-                stats["generation"]["ice"]["HEAVY"] + stats["generation"]["ice"]["LIGHT"]
-            ),
-            "total_water_produced": stats["generation"]["water"],
-            "action_queue_updates_success": stats["action_queue_updates_success"],
-            "action_queue_updates_total": stats["action_queue_updates_total"],
-        }
-        return metrics
-
     def step(self, action: np.ndarray):
         """
         Calculate metrics and reward, with info["metrics"] passed to Tensorboard in train.py.
         """
         self.keep_enemy_alive()
         obs, _, done, info = self.env.step(action)
-        info["metrics"] = self.calculate_metrics()
-        reward, self.prev_reward_calculations = self.reward(
+        reward, self.prev_reward_calculations, metrics = self.reward_fn(
             obs=obs,
+            stats=self.env.state.stats,
             player=self.player,
             env_cfg=self.env_cfg,
             prev_reward_calculations=self.prev_reward_calculations,
         )
+        info["metrics"] = metrics
         return obs, reward, done, info
 
     def reset(self, **kwargs):
@@ -227,3 +220,30 @@ class FullObservationWrapper(gym.ObservationWrapper):
 
     def observation(self, obs: ObservationStateDict) -> Dict[str, Tensor]:
         return get_full_obs(obs, self.env_cfg, self.player, self.opponent)
+
+
+class SingleUnitControlWrapper(gym.Wrapper):
+    def __init__(self, env: gym.Env, player: Player) -> None:
+        super().__init__(env)
+        self.env_cfg = self.env.state.env_cfg
+        self.observation_space = get_full_obs_space(self.env_cfg)
+        self.player = player
+        self.opponent = "player_1" if player == "player_0" else "player_0"
+
+    def step(self, action: np.ndarray):
+        """
+        Return observation Tensors with the following appended:
+        - Boolean indicating whether this is a new game state.
+        - Tensor of shape (batch_size, 2) holding the position for a single unit per game.
+        Take
+        """
+        self.keep_enemy_alive()
+        obs, _, done, info = self.env.step(action)
+        info["metrics"] = self.calculate_metrics()
+        reward, self.prev_reward_calculations = self.reward(
+            obs=obs,
+            player=self.player,
+            env_cfg=self.env_cfg,
+            prev_reward_calculations=self.prev_reward_calculations,
+        )
+        return obs, reward, done, info
