@@ -3,7 +3,7 @@ from gym import spaces
 import torch
 from torch import nn, Tensor
 from torch.distributions import Distribution
-from typing import Callable
+from typing import Callable, Dict, List, Tuple
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
@@ -44,7 +44,7 @@ class MapFeaturesExtractor(BaseFeaturesExtractor):
             nn.Tanh(),
         )
 
-    def forward(self, batch_full_obs: dict[str, Tensor]) -> Tensor:
+    def forward(self, batch_full_obs: Dict[str, Tensor]) -> Tensor:
         # place my units as the first channels, to use for masking later
         my_factories = batch_full_obs["player_has_factory"][:, 0].unsqueeze(1)
         opp_factories = batch_full_obs["player_has_factory"][:, 1].unsqueeze(1)
@@ -157,7 +157,7 @@ class ActorCriticNet(nn.Module):
             nn.Linear(72, 1),
         )
 
-    def set_active_robot_jobs(self, active_nets: list[str]):
+    def set_active_robot_jobs(self, active_nets: List[str]):
         self.robot_job_active = [job in active_nets for job in ROBOT_JOBS]
 
     def forward_actor(self, batch_map_features: Tensor) -> Tensor:
@@ -200,7 +200,7 @@ class ActorCriticNet(nn.Module):
     def forward_critic(self, batch_map_features: Tensor) -> Tensor:
         return self.value_calculation(batch_map_features)
 
-    def forward(self, batch_map_features: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, batch_map_features: Tensor) -> Tuple[Tensor, Tensor]:
         return self.forward_actor(batch_map_features), self.forward_critic(batch_map_features)
 
 

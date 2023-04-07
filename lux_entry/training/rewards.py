@@ -1,6 +1,6 @@
 from collections import defaultdict
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict, Tuple
 
 from luxai_s2.state import ObservationStateDict
 
@@ -18,8 +18,8 @@ def ice_mining_reward(
     obs: ObservationStateDict,
     player: Player,
     env_cfg: EnvConfig,
-    prev_reward_calculations: Optional[dict],
-) -> tuple[float, dict]:
+    prev_reward_calculations: Optional[Dict],
+) -> Tuple[float, Dict]:
     units = obs["units"][player]
     factories = obs["factories"][player]
     factory_positions = {
@@ -60,7 +60,7 @@ def ice_mining_reward(
             else total_cargo == H_CAR_SPACE
         )
         for unit_id, unit in units.items()
-        if (total_cargo := unit["cargo"]["ice"] + unit["cargo"]["ore"])
+        for total_cargo in [unit["cargo"]["ice"] + unit["cargo"]["ore"]]
     }
 
     reward = 0
