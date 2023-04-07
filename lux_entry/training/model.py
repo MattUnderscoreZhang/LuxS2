@@ -19,6 +19,7 @@ ROBOT_JOBS = ["ice_miner", "ore_miner", "courier", "sabateur", "soldier", "berse
 N_ACTIONS = 12
 
 
+# TODO: this code is CPU-bound - figure out how to optimize
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
